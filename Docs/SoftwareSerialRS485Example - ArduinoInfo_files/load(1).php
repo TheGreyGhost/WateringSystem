@@ -1,0 +1,1 @@
+#bodyContent{font-size:20px;color:#006699;font-family:Comic Sans MS}.mw-body-content a:link{color:#0000FF;text-decoration:underline}
