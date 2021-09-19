@@ -98,7 +98,7 @@ void executeCommand(char command[])
     case 'D':
     case 'd': {
       commandIsValid = true;
-      pulsetrain(command + 1, timedelay);
+      pulsetrain(command, timedelay);
       break;
     }
     case 't': {
