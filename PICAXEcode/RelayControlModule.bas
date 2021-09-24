@@ -39,7 +39,7 @@ symbol RELAY_LATCH = C.2
 symbol relayTargetStates = b0
 symbol relayCurrentStates = b1
 symbol rs485Mode = b7
-symbol rs485ByteToSend = b3
+symbol relayByteToSend = b3
 
   b0 = 0
   b1 = 0
@@ -48,7 +48,7 @@ symbol rs485ByteToSend = b3
   low RELAY_CLOCK
   high RELAY_LATCH
   
-  rs485ByteToSend = 0
+  relayByteToSend = 0
   gosub sendrelaysbyte
   
 	b8 = $55
@@ -56,8 +56,6 @@ symbol rs485ByteToSend = b3
 main:
   relayTargetStates = b8
 	gosub changestates
-  sleep 1000
-	gosub latchrelaysstate
 	sleep 3000
 	b8 = b8 + 1
   goto main
@@ -74,7 +72,9 @@ changestates:
 		if b6 <> 0 then
 	  	b3 = relayCurrentStates xor b5 	
 	  	gosub sendrelaysbyte
-			sleep 500
+			sleep 50
+			gosub latchrelaysstate
+			sleep 450
 		endif	
 		b5 = b5 / 2  
   loop until b5 = 0
@@ -88,11 +88,11 @@ sendrelaysbyte:
 		sleep 5
 	endif
 
-  b1 = rs485ByteToSend
+  b1 = relayByteToSend
   for b4 = 0 to 7
-    b2 = rs485ByteToSend and 1
+    b2 = relayByteToSend and 1
     gosub sendbit
-    rs485ByteToSend = rs485ByteToSend / 2
+    relayByteToSend = relayByteToSend / 2
   next b4
   return
   
