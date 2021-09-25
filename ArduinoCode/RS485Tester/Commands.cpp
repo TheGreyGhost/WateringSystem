@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <SoftwareSerial.h>
 #include "Commands.h"
 #include "SystemStatus.h"
 
@@ -13,12 +14,23 @@ const int C_PIN = 3;
 const int D_PIN = 4;
 const int L_PIN = 5;
 
+const int RS485_RX_PIN = 10;
+const int RS485_TX_PIN = 11;
+const int RS485_SENDMODE_PIN = 12;
+
+SoftwareSerial rs485serial(RS485_RX_PIN, RS485_TX_PIN);
+
 // currently doesn't do anything in particular
 void setupCommands()
 {
   pinMode(C_PIN, OUTPUT);
   pinMode(D_PIN, OUTPUT);
   pinMode(L_PIN, OUTPUT);
+  pinMode(RS485_RX_PIN, INPUT);
+  pinMode(RS485_TX_PIN, OUTPUT);
+  pinMode(RS485_SENDMODE_PIN, OUTPUT);
+  digitalWrite(RS485_SENDMODE_PIN, LOW);
+  rs485serial.begin(4800);
 }
 
 // parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed

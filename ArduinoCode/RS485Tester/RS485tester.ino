@@ -2,7 +2,7 @@
 #include "RS485Tester.h"
 #include "Commands.h"
 #include "SystemStatus.h"
-
+#include <SoftwareSerial.h>
 /********************************************************************/
 
 void setup(void) 
