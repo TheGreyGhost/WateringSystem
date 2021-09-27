@@ -13,24 +13,12 @@ long timedelay = 1000; // default time (ms) for each transition
 const int C_PIN = 3;
 const int D_PIN = 4;
 const int L_PIN = 5;
-
-const int RS485_RX_PIN = 10;
-const int RS485_TX_PIN = 11;
-const int RS485_SENDMODE_PIN = 12;
-
-SoftwareSerial rs485serial(RS485_RX_PIN, RS485_TX_PIN);
-
 // currently doesn't do anything in particular
 void setupCommands()
 {
   pinMode(C_PIN, OUTPUT);
   pinMode(D_PIN, OUTPUT);
   pinMode(L_PIN, OUTPUT);
-  pinMode(RS485_RX_PIN, INPUT);
-  pinMode(RS485_TX_PIN, OUTPUT);
-  pinMode(RS485_SENDMODE_PIN, OUTPUT);
-  digitalWrite(RS485_SENDMODE_PIN, LOW);
-  rs485serial.begin(4800);
 }
 
 // parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed
@@ -44,6 +32,21 @@ bool parseLongFromString(const char *buffer, const char * &nextUnparsedChar, lon
   if (!isdigit(*buffer) && *buffer != '-') return false;
   char *forceNonConst = (char *)nextUnparsedChar;
   retval = strtol(buffer, &forceNonConst, 10);
+  nextUnparsedChar = (const char *)forceNonConst;
+  return true;
+}
+
+// parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed
+// returns false if no valid number found (without altering retval)
+bool parseULongFromHexString(const char *buffer, const char * &nextUnparsedChar, unsigned long &retval)
+{
+  while (isspace(*buffer)) {
+    ++buffer;
+  }
+  nextUnparsedChar = buffer;
+  if (!isdigit(*buffer) && !(*buffer >= 'a' && *buffer <='f') && !(*buffer >= 'A' && *buffer <='F')) return false;
+  char *forceNonConst = (char *)nextUnparsedChar;
+  retval = strtol(buffer, &forceNonConst, 16);
   nextUnparsedChar = (const char *)forceNonConst;
   return true;
 }
@@ -101,6 +104,7 @@ void executeCommand(char command[])
       console->println("commands (turn CR+LF on):");
       console->println("!t {time} = set command delay time (ms)");
       console->println("!cCdDlL = output train on pins C, D, L respectively.  c = low C = high etc.  Example: cDdCDd = cLo Dhi Dlo CHi Dhi Dlo");
+      console->println("!r {byteID} {byteCommand} {dwordParameter}.  Example !r 5A 34 FF03 ");
       break;
     }
     case 'C':
@@ -126,6 +130,30 @@ void executeCommand(char command[])
         console->println(timedelay); 
       } else {
         console->print("invalid time delay specified"); 
+      }
+      break;
+    }
+    case 'r': {
+      commandIsValid = true; 
+      unsigned long retval;
+      unsigned char byteid;
+      unsigned char bytecommand;
+      unsigned long dwordparameter;
+      
+      const char *nextUnparsedChar;
+      bool success = parseULongFromHexString(command+1, nextUnparsedChar, retval);
+      if (success && retval <= 0xFF) {
+        byteid = (unsigned char)retval;
+        success = parseULongFromHexString(nextUnparsedChar, nextUnparsedChar, retval);
+      }
+      if (success && retval <= 0xFF) {
+        bytecommand = (unsigned char)retval;
+        success = parseULongFromHexString(nextUnparsedChar, nextUnparsedChar, retval);
+      }
+      if (success) {
+        dwordparameter = retval;
+      } else {
+        console->print("invalid parameters; type !? for help"); 
       }
       break;
     }

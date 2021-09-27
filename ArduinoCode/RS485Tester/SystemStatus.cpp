@@ -1,8 +1,9 @@
-#include "SystemStatus.h"
+#include <Arduino.h>
 #include <DigitalIO.h>
+#include "SystemStatus.h"
 #include "WatchDog.h"
 #include "OutputDestination.h"
-#include "OutputBoardTester.h"
+#include "RS485Tester.h"
 
 byte assertFailureCode = 0;
 
@@ -11,7 +12,7 @@ Stream *consoleInput;
 
 void printDebugInfo(Print &dest)
 {
-  dest.print("Version:"); dest.println(OBT_VERSION); 
+  dest.print("Version:"); dest.println(RS485T_VERSION); 
   dest.print("Last Assert Error:"); dest.println(assertFailureCode); 
 }
 
