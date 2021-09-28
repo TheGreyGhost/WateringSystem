@@ -70,10 +70,10 @@ unsigned short crc16(const unsigned char* data_p, unsigned char length){
  * 2) Slave waits at least 100 ms then responds ${BYTEID}{BYTECOMMAND}{DWORDSTATUS}{CRC16} then releases bus
  * 
  * Commands:
- * 100 = are you alive?  Response = device status; 0 = good
+ * 100 = are you alive?  Response = device status; byte0 = status (0=good), bytes 1, 2, 3 = errorcounts (debug)
  * 
  * For solenoids:
- * 101 = what is your current output?  Response = output (bits 0->31)
+ * 101 = what is your current output?  Response = output (bits 0->7 = current states, bits 8->15 = target states)
  * 102 = change output (bits 0->31).  Response = repeat target output
  * 
  */
