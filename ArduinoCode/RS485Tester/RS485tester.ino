@@ -14,11 +14,14 @@ void setup(void)
   Serial.println("Setting up"); 
 
   setupSystemStatus();
+  setupSlaveComms();
   setupCommands();
+  Serial.println("Ready"); 
 } 
 
 void loop(void) 
 { 
   tickCommands();
+  tickSlaveComms();
   tickSystemStatus();
 }

@@ -1,7 +1,8 @@
 #include <Arduino.h>
-#include "SlaveComms.h"
 #include <SoftwareSerial.h>
 #include <DigitalIO.h>
+#include "SlaveComms.h"
+#include "SystemStatus.h"
 
 const int RS485_RX_PIN = 10;
 const int RS485_TX_PIN = 11;
@@ -20,8 +21,10 @@ void setupSlaveComms()
 
 void tickSlaveComms()
 {
-
-
+  if (rs485serial.available()) {
+    char c = rs485serial.read();
+    console->print(c, HEX);     
+  }  
 }
 
 // Send the given command on the RS485 serial bus.
@@ -62,6 +65,28 @@ unsigned short crc16(const unsigned char* data_p, unsigned char length){
     }
     return crc;
 }
+
+// Send a test char on the RS485 serial bus.
+// Puts the line into write mode, sends the char, then places line back into read mode
+// returns true for success, false otherwise
+bool sendCommandTestChar()
+{
+  bool success = true;
+  const int BASELEN = 1+1+4;
+  const int CRC16LEN = 2;
+  const int BUFFLEN = BASELEN + CRC16LEN;
+  unsigned char writebuffer[BUFFLEN];
+  writebuffer[0] = '!';
+
+  digitalWrite(RS485_SENDMODE_PIN, HIGH);
+  for (int i = 0; i < 1000; ++i) {
+    int byteswritten = rs485serial.write(writebuffer, 1);
+    if (byteswritten != 1) success = false;
+  }  
+  digitalWrite(RS485_SENDMODE_PIN, LOW);
+  return success;
+}
+
 
 /*
  * Protocol for communicating with slave device is:

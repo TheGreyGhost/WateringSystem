@@ -2,6 +2,7 @@
 #include <SoftwareSerial.h>
 #include "Commands.h"
 #include "SystemStatus.h"
+#include "SlaveComms.h"
 
 const int MAX_COMMAND_LENGTH = 30;
 const int COMMAND_BUFFER_SIZE = MAX_COMMAND_LENGTH + 2;  // if buffer fills to max size, truncation occurs
@@ -104,7 +105,8 @@ void executeCommand(char command[])
       console->println("commands (turn CR+LF on):");
       console->println("!t {time} = set command delay time (ms)");
       console->println("!cCdDlL = output train on pins C, D, L respectively.  c = low C = high etc.  Example: cDdCDd = cLo Dhi Dlo CHi Dhi Dlo");
-      console->println("!r {byteID} {byteCommand} {dwordParameter}.  Example !r 5A 34 FF03 ");
+      console->println("!r {byteID} {byteCommand} {dwordParameter}.  = Send to RS485 Example !r 5A 34 FF03 ");
+      console->println("!s = send ! to RS485");
       break;
     }
     case 'C':
@@ -129,7 +131,7 @@ void executeCommand(char command[])
         console->print("time delay set to: ");
         console->println(timedelay); 
       } else {
-        console->print("invalid time delay specified"); 
+        console->println("invalid time delay specified"); 
       }
       break;
     }
@@ -152,8 +154,22 @@ void executeCommand(char command[])
       }
       if (success) {
         dwordparameter = retval;
+        success = sendCommand(byteid, bytecommand, dwordparameter);
+        if (!success) {
+          console->println("transmission failed"); 
+        }
       } else {
-        console->print("invalid parameters; type !? for help"); 
+        console->println("invalid parameters; type !? for help"); 
+      }
+      break;
+    }
+    case 's': {
+      commandIsValid = true; 
+      bool success = sendCommandTestChar();
+      console->print("bytes written:");
+      console->println(success);
+      if (!success) {
+        console->println("transmission failed"); 
       }
       break;
     }

@@ -67,6 +67,7 @@ symbol i = b13	'used by crc16
 symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
+	sleep 10  ' give me a chance to start download
 	disconnect
   relayTargetStates = 0
   relayCurrentStates = 0
@@ -152,8 +153,14 @@ latchrelaysstate:
 ' */
 
 waitforfirst:
-  gosub rs485modeSetToRead
+	gosub rs485modeSetToWrite
+	sertxd ("$")
+	goto waitforfirst
+	
+	gosub rs485modeSetToRead
   serrxd inputAttentionByte 
+	
+	
 	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
   bptr = INPUT_BUFFER_BPTR
   serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
@@ -260,7 +267,7 @@ cmdinvalid:
 rs485modeSetToRead:
   if rs485Mode = 1 then
 		rs485Mode = 0
-		low RS485_OUT
+		low RS485_DIR
 		pause 5
 	endif
 	return
@@ -268,7 +275,7 @@ rs485modeSetToRead:
 rs485modeSetToWrite:
   if rs485Mode = 0 then
 		rs485Mode = 1
-		high RS485_OUT
+		high RS485_DIR
 		pause 5
 	endif
 	return
