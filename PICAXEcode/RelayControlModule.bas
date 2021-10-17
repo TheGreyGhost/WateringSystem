@@ -1,6 +1,6 @@
 '
 ' the unique byte identifier for this device - change it to unique value before download!
-symbol MY_BYTEID = 5
+symbol MY_BYTEID = "A"
 
 ' hardware connections:
 ' C.0 = dual purpose: serial out (to RS485 chip), and data for Relay module
@@ -9,6 +9,9 @@ symbol MY_BYTEID = 5
 '
 ' C.1 = clock for Relay module
 ' C.2 = latch for Relay module
+'
+' C.3 = reprogram mode.  
+
 symbol RS485_IN = C.5
 symbol RS485_DIR = C.4
 symbol RS485_OUT = C.0
@@ -16,6 +19,8 @@ symbol RS485_OUT = C.0
 symbol RELAY_DATA = C.0
 symbol RELAY_CLOCK = C.1
 symbol RELAY_LATCH = C.2
+
+symbol REPROGRAM_MODE_PIN = pinC.3
 '
 ' The relay module functions as follows:
 ' It has three inputs- data, clock, and latch.
@@ -67,15 +72,25 @@ symbol i = b13	'used by crc16
 symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
-	sleep 10  ' give me a chance to start download
+	pullup ON
+  low RELAY_CLOCK
+  low RELAY_LATCH
+	low RS485_DIR
+	pause 50
+
+' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
+waitwhilereprogramming:
+  if REPROGRAM_MODE_PIN = 0 then 
+		high RS485_DIR
+		goto waitwhilereprogramming
+	endif	 
+
 	disconnect
   relayTargetStates = 0
   relayCurrentStates = 0
   rs485Mode = 0
   errorcount1 = 0
 	
-  low RELAY_CLOCK
-  low RELAY_LATCH
   relayByteToSend = 0
   gosub sendrelaysbyte
 	
@@ -159,8 +174,7 @@ waitforfirst:
 	
 	gosub rs485modeSetToRead
   serrxd inputAttentionByte 
-	
-	
+		
 	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
   bptr = INPUT_BUFFER_BPTR
   serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
