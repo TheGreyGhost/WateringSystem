@@ -1,152 +1,113 @@
 #include <Arduino.h>
-#include <SoftwareSerial.h>
-// the purpose of this module is to facilitate programming the PICAXE chips
-// It receives serial from the programming PC and passes it through to the PICAXE, and passes back the PICAXE' reply in turn
-
-#include <AltSoftSerial.h>
 #include <DigitalIO.h>
 
-// AltSoftSerial always uses these pins:
+//  Assist with reprogramming PICAXE which aren't listening to programming commands
+// algorithm:
+// 1) in normal operation: passes serial information from PC to PICAXE and vica versa (direct pass-thru)
+// 2) during startup, sends frequent serial breaks to the PICAXE (high output for more than 1 frame; for 10 ms) every 20 ms
+// 3) when input is detected from the PC (manually done by user using terminal), drop back to 1 second intervals
+// 4) then, once further input is detected from the PC, stop sending breaks.
+
+// 8 = input from PC
+// 9 = output to PC
+// 10 = input from PICAXE
+// 11 = output to PICAXE
+
+// portB (digital pin 8 to 13)  8 = 1, 9 = 2, 10 = 4, 11 = 8, 13 = 32
+//PORTB maps to Arduino digital pins 0 to 7
 //
-// Board          Transmit  Receive   PWM Unusable
-// -----          --------  -------   ------------
-// Teensy 3.0 & 3.1  21        20         22
-// Teensy 2.0         9        10       (none)
-// Teensy++ 2.0      25         4       26, 27
-// Arduino Uno        9         8         10
-// Arduino Leonardo   5        13       (none)
-// Arduino Mega      46        48       44, 45
-// Wiring-S           5         6          4
-// Sanguino          13        14         12
+//DDRB - The Port B Data Direction Register - read/write
+//PORTB - The Port B Data Register - read/write
+//PINB - The Port B Input Pins Register - read only
 
-// This example code is in the public domain.
+const long BREAK_US = 1000000;
+const long BREAK_SPACING_QUICK_US = 20000;
+const long BREAK_SPACING_SLOW_US = 200000;
 
-SoftwareSerial picaxeCOM(8, 9, true);  
-bool readyToStart = false;
+char outputs[8];
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial) ; // wait for Arduino Serial Monitor to open
-  picaxeCOM.begin(4800);
-  Serial.println("PICAXEcom begin");
-  readyToStart = true;
+//  while (!Serial) ; // wait for Arduino Serial Monitor to open
+//  Serial.println("Ready");
+  DDRB = B11111010;  // pin 8 and pin 10 are inputs
+
+  int r;
+  for (int i = 0; i < 8; ++i) {
+    r = 0;
+    if (i & 1) r = 8;
+    if (i & 4) r |= 2;
+    outputs[i] = r;
+  }
 }
 
 void loop() {
-  DigitiseLoop();
-//  char r;
-//  if (picaxeCOM.available()) {
-//    r = picaxeCOM.read();
-//    Serial.print(r);
-//  } else {
-//    if (Serial.available()) {
-//      r = Serial.read();
-//      picaxeCOM.write(r);    
-//    }
-//  }
+  delaytest(BREAK_SPACING_QUICK_US, true);
 }
-  
-  int msg[100];
-  int msgidx = 0;
 
-//void normalSerialLoop() {
-//  if (msgidx < 100) {
-//    if (picaxe.available()) {
-//      msg[msgidx++] = picaxe.read();
-//    }
-//  } else {
-//    for (int i = 0; i < msgidx; ++i) {
-//      //Serial.println(gaps[idx], DEC);
-//      Serial.println(msg[i], DEC);
-//    }
-//    msgidx = 0;
-//  }
-//}
+// if infiniteloop is true: once PC input is detected, loop infinitely in passthrough
+void passthrough(long breakSpacingUs, bool infiniteloop) {
+  long startbreak, endbreak, timenow;
+  bool serialbreak;
+  int r;
+  bool inputdetected;
+  startbreak = micros();
+  serialbreak = false;  
 
-//void AltSerialLoop() {
-//  if (msgidx < 100) {
-//    if (altSerial.available()) {
-//      msg[msgidx++] = altSerial.read();
-//    }
-//  } else {
-//    for (int i = 0; i < msgidx; ++i) {
-//      //Serial.println(gaps[idx], DEC);
-//      Serial.println(msg[i], DEC);
-//    }
-//    msgidx = 0;
-//  }
-//}
-
-
-void DigitiseLoop() {
-  char c;
-  int oldstate, newstate;
-  long lasttime, thistime, delta;
-  int gaps[500];
-  int idx = 0;
-  if (!readyToStart) return;
-
-  lasttime = micros();
   do {
-    do {
-      newstate = digitalRead(8);
-    } while (newstate == oldstate);  
-    thistime = micros();
-    digitalWrite(13, newstate);
-    delta = thistime - lasttime;
-    if (delta > 32000) delta = 32000;
-    gaps[idx++] = (newstate ? delta : -delta);  //(newstate ? thistime - lasttime : lasttime - thistime);  
-    lasttime = thistime;
-    oldstate = newstate;
-  } while (idx < 10);
+    timenow = micros();
+    if (!serialbreak && timenow >= startbreak) {
+      serialbreak = true;
+      endbreak = startbreak + BREAK_US;
+      startbreak = timenow + breakSpacingUs;
+    } else if (serialbreak && timenow >= endbreak) {
+      serialbreak = false;
+    }
+    r = PINB & B101;
+    inputdetected = (r & 1);
+    if (serialbreak) r |= 1;
+    PORTB = (PORTB & B11000000) | outputs[r];
+  } while (!inputdetected);
 
-  for (idx = 0; idx < 500; ++idx) {
-    //Serial.println(gaps[idx], DEC);
-    Serial.println(gaps[idx], DEC);
+  if (infiniteloop) {
+    do {
+      r = PINB & B101;
+      PORTB = (PORTB & B11000000) | outputs[r] | 32;
+    } while (true);
   }
-  idx = 0;
-  readyToStart = false;
-//  if (Serial.available()) {
-//    c = Serial.read();
-//    altSerial.print(c);
-//  }
-//  if (altSerial.available()) {
-//    c = altSerial.read();
-//    Serial.print(c);
-//  }
+  
 }
 
-// troubleshooting:
-// the PICAXE message does the following:
-// Hello: I'm your PICAXE-18M2 from the PICAXE is detected as the following bit patterns:
-//1  111101101000    --> 1 start bit, then inverted bits from LSB to MSB, then 3 stop bits.  --> 1 01001000 = 72 = H
-//13  101011001000
-//25  111001001000
-//37  111001001000
-//49  100001001000
-//61  111001011000
-//73  111111011000
-//85  101101101000
-//97  111111011000
-//109 101111001000
-//121 101001001000
-//133 111111011000
-//145 101100001000
-//157 100001001000
-//169 101010001000
-//181 110110001000
-//193 111111011000
-//205 111110101000
-//217 101101101000
-//229 100111101000
-//241 101111101000
-//253 111100101000
-//265 101011101000
-//277 101001011000
-//289 111110011000
-//301 111100011000
-//313 101001101000
-//325 110110011000
-//337 101001111000
+// if infiniteloop is true: once PC input is detected, loop infinitely in passthrough
+void delaytest(long breakSpacingUs, bool infiniteloop) {
+  long pcInputTime, picaxeInputTime, timenow;
+  bool serialbreak;
+  int r;
+  bool pcInputDetected, picaxeInputDetected;
+  serialbreak = false;  
 
-//   When the RxD input is tied high, the PICAXE outputs a config string
+  do {
+    timenow = micros();
+    r = PINB & B101;
+    pcInputDetected = (r & 1);
+    picaxeInputDetected = (r & 4);
+    if (picaxeInputDetected) {
+      picaxeInputTime = timenow;
+    }
+    if (pcInputDetected) {
+      pcInputTime = timenow;
+    }
+    r |= 1;
+    PORTB = (PORTB & B11000000) | outputs[r];
+  } while (!pcInputDetected);
+
+  long milliDelta = (pcInputTime - picaxeInputTime) / 1000;
+  Serial.println((int)milliDelta, DEC);
+
+  if (infiniteloop) {
+    do {
+      r = PINB & B101;
+      PORTB = (PORTB & B11000000) | outputs[r] | 32;
+    } while (true);
+  }
+}
