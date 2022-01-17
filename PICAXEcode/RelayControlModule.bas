@@ -1,3 +1,6 @@
+' The RelayControlModule has two major functions:
+' 1) Communicate with the master over RS485
+' 2) Manipulate the outputs on the attached Relay Control Module (up to 8)
 '
 ' the unique byte identifier for this device - change it to unique value before download!
 symbol MY_BYTEID = "A"
@@ -10,9 +13,9 @@ symbol MY_BYTEID = "A"
 ' C.1 = clock for Relay module
 ' C.2 = latch for Relay module
 '
-' C.3 = reprogram mode.  
+' C.3 = reprogram mode.  if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485 and wait for reprogramming 
 
-symbol RS485_IN = C.5
+symbol RS485_IN = C.5		
 symbol RS485_DIR = C.4
 symbol RS485_OUT = C.0
 
@@ -34,7 +37,7 @@ symbol REPROGRAM_MODE_PIN = pinC.3
 '  C.2 = falling latch edge to latch the output
 ' Due to limited pin count, the serout and Relay module Data are combined:
 '   Ensure to disable serial out (C.4) before manipulating Data for the Relay module
-' To change the relay value, briefly (ZZ ms) set C.2 to 0.
+' To change the relay value, briefly (10 ms) set C.2 to 0.
 '
 ' b0 = target relay states (1 bit per relay)
 ' b1 = current relay states
@@ -43,7 +46,8 @@ symbol REPROGRAM_MODE_PIN = pinC.3
 ' b4 = reserved for sendbyte
 ' b5 = reserved for changestates
 ' b6 = reserved for changestates
-' b7 = send/receive mode (0 = receive, 1 = send)
+' b7 = RS485 send/receive mode (0 = receive, 1 = send)
+' b8/b9 (w4) = crc calculation temp
 
 symbol relayTargetStates = b0
 symbol relayCurrentStates = b1
@@ -72,10 +76,12 @@ symbol i = b13	'used by crc16
 symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
+
+main:
 	pullup ON
   low RELAY_CLOCK
   low RELAY_LATCH
-	low RS485_DIR
+	low RS485_DIR				'receive
 	pause 50
 
 ' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
@@ -85,16 +91,18 @@ waitwhilereprogramming:
 		goto waitwhilereprogramming
 	endif	 
 
+' set system to idle, set all relays to off, and wait for RS485 comms
 	disconnect
   relayTargetStates = 0
   relayCurrentStates = 0
-  rs485Mode = 0
+  rs485Mode = 0 'receive
   errorcount1 = 0
+  errorcount2 = 0
+  errorcount3 = 0
 	
   relayByteToSend = 0
   gosub sendrelaysbyte
-	
-main:
+
 	goto waitforfirst
 	
 '  change from the current states (b1) to the target states (b0), one bit at a time, waiting 500ms between bit switches
@@ -164,7 +172,7 @@ latchrelaysstate:
 ' *       After sending a reply immediately, the code will then change the solenoids to match the target states
 ' *       It won't be responsive to further commands during this time
 ' * 
-' * Response with bytecommand = 255 indicates parsing error / invalid command
+' * If slave responds with bytecommand = 255 it indicates parsing error / invalid command
 ' */
 
 waitforfirst:
@@ -180,8 +188,8 @@ waitforfirst:
   serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
 	' inputByteId  = {BYTEID}
 	' inputByteCommand  = {BYTECOMMAND}
-	' inputParameterB0  - inputParameterB3  = {DWORDCOMMANDPARAM}
-	' inputCRCb0  - inputCRCb1  = {CRC16}
+	' inputParameterB0 -> inputParameterB3  = {DWORDCOMMANDPARAM}
+	' inputCRCb0 -> inputCRCb1  = {CRC16}
 	if inputAttentionByte <> "!" or inputByteId <> MY_BYTEID then goto waitforfirst
 	gosub checkcrc16
 	if crc16value <> 0 then
