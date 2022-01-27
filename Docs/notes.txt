@@ -1,0 +1,25 @@
+Notes on the MAX485 module: uses a MAX485 ESA +18DN chip
+The receiver input has a fail-safe feature that guarantees a logic-high output if the input is open circuit.
+Bus idle state: A high B low -> RO high
+if _RE_ is low, RO is enabled.
+If DI is low, output Y is low and output Z is high.
+-->if Y connected to A, then DI low causes RO low.
+
+PICAXE sertxd and serrxd are: All data bytes sent have 8 data bits, use no partity and have 1 stop bit. 
+Nxxx baud rates idle low, with pulses going high.
+Txxx baud rates idle high, with pulses going low
+sertxd and serrxd are equivalent to N4800.
+
+es, SERTXD idles low. The data bits are inverted so you can send a pulse of varying length SERTXD(value) will give ...
+
+$FF - 1 bit  1111 1111
+$FE - 2	     1111 1110
+$FC - 3      1111 1100
+$F8 - 4
+$F0 - 5
+$E0 - 6
+$C0 - 7
+$80 - 8
+$00 - 9
+
+

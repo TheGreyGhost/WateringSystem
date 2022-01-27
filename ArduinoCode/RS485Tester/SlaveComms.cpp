@@ -8,7 +8,7 @@ const int RS485_RX_PIN = 10;
 const int RS485_TX_PIN = 11;
 const int RS485_SENDMODE_PIN = 12;
 
-SoftwareSerial rs485serial(RS485_RX_PIN, RS485_TX_PIN);
+SoftwareSerial rs485serial(RS485_RX_PIN, RS485_TX_PIN, true);  // use inverse logic i.e. IDLE = 0 volts
 
 void setupSlaveComms()
 {
@@ -21,10 +21,21 @@ void setupSlaveComms()
 
 void tickSlaveComms()
 {
+  static unsigned long lasttime = 0;
+  
   if (rs485serial.available()) {
     char c = rs485serial.read();
-    console->print(c, HEX);     
+    console->print(c, HEX);
+    console->print(" ");     
+    lasttime = millis();
   }  
+
+  unsigned long timenow = millis();
+  if (lasttime != 0 && timenow - lasttime > 500) {
+    console->println("");
+    lasttime = 0;
+  }
+  
 }
 
 // Send the given command on the RS485 serial bus.

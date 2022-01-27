@@ -16,7 +16,7 @@ void setup(void)
   setupSystemStatus();
   setupSlaveComms();
   setupCommands();
-  Serial.println("Ready"); 
+  console->println("Ready"); 
 } 
 
 void loop(void) 

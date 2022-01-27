@@ -177,7 +177,42 @@ latchrelaysstate:
 
 waitforfirst:
 	gosub rs485modeSetToWrite
-	sertxd ("$")
+	sertxd ("0")
+	pause 1000 
+	sertxd ("1")
+	pause 1000 
+
+	sertxd ("2")
+	pause 1000 
+
+	sertxd ("3")
+	pause 1000 
+
+	sertxd ("4")
+	pause 1000 
+
+	sertxd ("5")
+	pause 1000 
+
+	sertxd ("6")
+	pause 1000 
+
+	sertxd ("7")
+	pause 1000 
+
+	sertxd ("8")
+	pause 1000 
+
+	sertxd ("9")
+	pause 1000 
+
+	sertxd ("a")
+	pause 1000 
+
+	sertxd ("A")
+	pause 3000 
+
+
 	goto waitforfirst
 	
 	gosub rs485modeSetToRead
