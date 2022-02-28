@@ -9,6 +9,7 @@ symbol MY_BYTEID = "A"
 ' C.0 = dual purpose: serial out (to RS485 chip), and data for Relay module
 ' C.5 = serial in (from RS485 chip)
 ' C.4 = serial direction (RS485 chip selection): high = send, low = receive
+'    C.5 is valid when C.4 is low; C.5 is high impedance when C.4 is high.
 '
 ' C.1 = clock for Relay module
 ' C.2 = latch for Relay module
@@ -58,16 +59,16 @@ symbol crc16valueLo = b8
 symbol crc16valueHi = b9
 
 symbol inputAttentionByte = b16
-symbol INPUT_BUFFER_BPTR = 18
-symbol inputByteId = b18
-symbol inputByteCommand = b19
-symbol inputParameterB0 = b20
-symbol inputParameterB1 = b21
-symbol inputParameterB2 = b22
-symbol inputParameterB3 = b23
-symbol inputCRCb0 = b24
-symbol inputCRCb1 = b25
-symbol INPUT_BUFFER_BASE_LENGTH = 6 ' number of bytes in the input buffer for crc16 calculation
+symbol IO_BUFFER_BPTR = 18
+symbol ioByteId = b18
+symbol ioByteCommand = b19
+symbol ioParameterB0 = b20
+symbol ioParameterB1 = b21
+symbol ioParameterB2 = b22
+symbol ioParameterB3 = b23
+symbol ioCRCb0 = b24
+symbol ioCRCb1 = b25
+symbol IO_BUFFER_BASE_LENGTH = 6 ' number of bytes in the input output buffer for crc16 calculation
 
 symbol errorcount1 = b10  '  (number of timeouts during serial receive)
 symbol errorcount2 = b11  ' (number of CRC16 errors during serial receive)
@@ -83,6 +84,8 @@ main:
   low RELAY_LATCH
 	low RS485_DIR				'receive
 	pause 50
+
+  goto rs485DebugWriteTest2
 
 ' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
 waitwhilereprogramming:
@@ -176,7 +179,131 @@ latchrelaysstate:
 ' */
 
 waitforfirst:
+	gosub rs485modeSetToRead
+  serrxd inputAttentionByte 
+		
+	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
+  bptr = IO_BUFFER_BPTR
+  serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
+	' ioByteId  = {BYTEID}
+	' ioByteCommand  = {BYTECOMMAND}
+	' ioParameterB0 -> ioParameterB3  = {DWORDCOMMANDPARAM}
+	' ioCRCb0 -> ioCRCb1  = {CRC16}
+	if inputAttentionByte <> "!" or ioByteId <> MY_BYTEID then goto waitforfirst
+	gosub checkcrc16
+	if crc16value <> 0 then
+		errorcount2 = errorcount2 + 1 MAX 250
+		goto waitforfirst
+	end if
+
+	pause 100
+	if ioByteCommand = 100 then 
+		gosub cmd100
+	else if ioByteCommand = 101 then
+		gosub cmd101
+	else if ioByteCommand = 102 then
+		gosub cmd102
+	else
+		gosub cmdinvalid
+	end if
+	gosub calculatecrc16
 	gosub rs485modeSetToWrite
+	bptr = IO_BUFFER_BPTR
+	sertxd ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
+	gosub rs485modeSetToRead
+	if ioByteCommand = 102 then
+		relayTargetStates = ioParameterB0
+		gosub changestates
+	end if
+	
+	goto waitforfirst	
+	
+timeout:
+  errorcount1 = errorcount1 + 1 MAX 250
+	goto waitforfirst
+  
+	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3
+	' compare with inputCRCb0 - inputCRCb1
+	' if match: set crc16value to 0, otherwise non-zero
+checkcrc16:
+	gosub calculatecrc16
+	crc16valueHi = crc16valueHi ^ ioCRCb1 
+	crc16valueLo = crc16valueLo ^ ioCRCb0
+	return
+	
+	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3, store in crc16value
+'	unsigned short crc16(const unsigned char* data_p, unsigned char length){
+'    unsigned char x;
+'    unsigned short crc = 0xFFFF;
+'    while (length--){
+'        x = crc >> 8 ^ *data_p++;
+'        x ^= x>>4;
+'        crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x <<5)) ^ ((unsigned short)x);
+'    }
+'    return crc;
+'  }
+calculatecrc16:
+	crc16value = $ffff
+	bptr = IO_BUFFER_BPTR
+	for i = 1 to IO_BUFFER_BASE_LENGTH
+		x = @bptrinc					'x = crc >> 8 ^ *data_p++;
+		x = x ^ crc16valueHi  
+		x2 = x / 16						'x ^= x>>4;
+		x = x ^ x2
+		crc16valueHi = crc16valueLo  'crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x <<5)) ^ ((unsigned short)x);
+		x2 = x * 16
+		crc16valueHi = crc16valueHi ^ x2
+		x2 = x / 8
+		crc16valueHi = crc16valueHi ^ x2
+		x2 = x * 32
+		crc16valueLo = x2
+		crc16valueLo = crc16valueLo ^ x
+	next i	
+	return 
+
+' * 100 = are you alive?  Response = device status; byte0 = status (0=good), bytes 1, 2, 3 = errorcounts (debug)
+cmd100:
+	ioParameterB0 = 0
+	ioParameterB1 = errorcount1
+	ioParameterB2 = errorcount2
+	ioParameterB3 = errorcount3
+	return
+	
+' * 101 = what is your current output?  Response = output (bits 0->7 = current states, bits 8->15 = target states)
+cmd101:
+	ioParameterB0 = relayCurrentStates
+	ioParameterB1 = relayTargetStates
+	ioParameterB2 = 0
+	ioParameterB3 = 0
+	return
+
+' * 102 = change output (bits 0->31).  Response = repeat target output
+cmd102:
+	return
+
+cmdinvalid:
+	ioByteCommand = 255
+	return
+
+rs485modeSetToRead:
+  if rs485Mode = 1 then
+		rs485Mode = 0
+		low RS485_DIR
+		pause 5
+	endif
+	return
+  
+rs485modeSetToWrite:
+  if rs485Mode = 0 then
+		rs485Mode = 1
+		high RS485_DIR
+		pause 5
+	endif
+	return
+  
+ rs485DebugWriteTest:
+	gosub rs485modeSetToWrite
+
 	sertxd ("0")
 	pause 1000 
 	sertxd ("1")
@@ -211,130 +338,44 @@ waitforfirst:
 
 	sertxd ("A")
 	pause 3000 
-
-
-	goto waitforfirst
+	goto rs485DebugWriteTest
 	
-	gosub rs485modeSetToRead
-  serrxd inputAttentionByte 
-		
-	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
-  bptr = INPUT_BUFFER_BPTR
-  serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
-	' inputByteId  = {BYTEID}
-	' inputByteCommand  = {BYTECOMMAND}
-	' inputParameterB0 -> inputParameterB3  = {DWORDCOMMANDPARAM}
-	' inputCRCb0 -> inputCRCb1  = {CRC16}
-	if inputAttentionByte <> "!" or inputByteId <> MY_BYTEID then goto waitforfirst
-	gosub checkcrc16
-	if crc16value <> 0 then
-		errorcount2 = errorcount2 + 1 MAX 250
-		goto waitforfirst
-	end if
-
-	pause 100
-	if inputByteCommand = 100 then 
-		gosub cmd100
-	else if inputByteCommand = 101 then
-		gosub cmd101
-	else if inputByteCommand = 102 then
-		gosub cmd102
-	else
-		gosub cmdinvalid
-	end if
-	gosub calculatecrc16
+rs485DebugWriteTest2:
 	gosub rs485modeSetToWrite
-	bptr = INPUT_BUFFER_BPTR
-	sertxd ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
-	gosub rs485modeSetToRead
-	if inputByteCommand = 102 then
-		relayTargetStates = inputParameterB0
-		gosub changestates
-	end if
-	
-	goto waitforfirst	
-	
-timeout:
-  errorcount1 = errorcount1 + 1 MAX 250
-	goto waitforfirst
-  
-	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3
-	' compare with inputCRCb0 - inputCRCb1
-	' if match: set crc16value to 0, otherwise non-zero
-checkcrc16:
-	gosub calculatecrc16
-	crc16valueHi = crc16valueHi ^ inputCRCb1 
-	crc16valueLo = crc16valueLo ^ inputCRCb0
-	return
-	
-	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3, store in crc16value
-'	unsigned short crc16(const unsigned char* data_p, unsigned char length){
-'    unsigned char x;
-'    unsigned short crc = 0xFFFF;
-'    while (length--){
-'        x = crc >> 8 ^ *data_p++;
-'        x ^= x>>4;
-'        crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x <<5)) ^ ((unsigned short)x);
-'    }
-'    return crc;
-'  }
-calculatecrc16:
-	crc16value = $ffff
-	bptr = INPUT_BUFFER_BPTR
-	for i = 1 to INPUT_BUFFER_BASE_LENGTH
-		x = @bptrinc					'x = crc >> 8 ^ *data_p++;
-		x = x ^ crc16valueHi  
-		x2 = x / 16						'x ^= x>>4;
-		x = x ^ x2
-		crc16valueHi = crc16valueLo  'crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x <<5)) ^ ((unsigned short)x);
-		x2 = x * 16
-		crc16valueHi = crc16valueHi ^ x2
-		x2 = x / 8
-		crc16valueHi = crc16valueHi ^ x2
-		x2 = x * 32
-		crc16valueLo = x2
-		crc16valueLo = crc16valueLo ^ x
-	next i	
-	return 
 
-' * 100 = are you alive?  Response = device status; byte0 = status (0=good), bytes 1, 2, 3 = errorcounts (debug)
-cmd100:
-	inputParameterB0 = 0
-	inputParameterB1 = errorcount1
-	inputParameterB2 = errorcount2
-	inputParameterB3 = errorcount3
-	return
+	serout 1, T4800_4, ("0")
+	pause 1000 
 	
-' * 101 = what is your current output?  Response = output (bits 0->7 = current states, bits 8->15 = target states)
-cmd101:
-	inputParameterB0 = relayCurrentStates
-	inputParameterB1 = relayTargetStates
-	inputParameterB2 = 0
-	inputParameterB3 = 0
-	return
+	serout 1, T4800_4, ("1")
+	pause 1000 
 
-' * 102 = change output (bits 0->31).  Response = repeat target output
-cmd102:
-	return
+	serout 1, T4800_4, ("2")
+	pause 1000 
 
-cmdinvalid:
-	inputByteCommand = 255
-	return
+	serout 1, T4800_4, ("3")
+	pause 1000 
 
-rs485modeSetToRead:
-  if rs485Mode = 1 then
-		rs485Mode = 0
-		low RS485_DIR
-		pause 5
-	endif
-	return
-  
-rs485modeSetToWrite:
-  if rs485Mode = 0 then
-		rs485Mode = 1
-		high RS485_DIR
-		pause 5
-	endif
-	return
-  
-  
+	serout 1, T4800_4, ("4")
+	pause 1000 
+
+	serout 1, T4800_4, ("5")
+	pause 1000 
+
+	serout 1, T4800_4, ("6")
+	pause 1000 
+
+	serout 1, T4800_4, ("7")
+	pause 1000 
+
+	serout 1, T4800_4, ("8")
+	pause 1000 
+
+	serout 1, T4800_4, ("9")
+	pause 1000 
+
+	serout 1, T4800_4, ("a")
+	pause 1000 
+
+	serout 1, T4800_4, ("A")
+	pause 3000 
+	goto rs485DebugWriteTest2

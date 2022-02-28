@@ -22,4 +22,7 @@ $C0 - 7
 $80 - 8
 $00 - 9
 
+Useful tool:
+Logic Analyzer- https://create.arduino.cc/projecthub/vincenzo-g/diy-logic-analyzer-f61ee5
+
 
