@@ -85,7 +85,7 @@ main:
 	low RS485_DIR				'receive
 	pause 50
 
-  goto rs485DebugWriteTest2
+goto rs485TestEcho:
 
 ' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
 waitwhilereprogramming:
@@ -300,7 +300,21 @@ rs485modeSetToWrite:
 		pause 5
 	endif
 	return
-  
+
+rs485TestEcho:
+	gosub rs485modeSetToRead
+	serin [5000, rteTimeOut], 5, T4800_4, b16
+
+	gosub rs485modeSetToWrite
+	serout 1, T4800_4, (b16)
+	goto rs485TestEcho
+
+rteTimeOut:
+	gosub rs485modeSetToWrite
+	serout 1, T4800_4, ("*")
+	serout 1, T4800_4, (10, 13)
+	goto rs485TestEcho
+	
  rs485DebugWriteTest:
 	gosub rs485modeSetToWrite
 
