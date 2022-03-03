@@ -302,9 +302,13 @@ rs485modeSetToWrite:
 	return
 
 rs485TestEcho:
+	disconnect
+	low RELAY_LATCH
 	gosub rs485modeSetToRead
 	serin [5000, rteTimeOut], 5, T4800_4, b16
-
+	high RELAY_LATCH
+	pause 1000
+	
 	gosub rs485modeSetToWrite
 	serout 1, T4800_4, (b16)
 	goto rs485TestEcho
@@ -315,7 +319,7 @@ rteTimeOut:
 	serout 1, T4800_4, (10, 13)
 	goto rs485TestEcho
 	
- rs485DebugWriteTest:
+rs485DebugWriteTest:
 	gosub rs485modeSetToWrite
 
 	sertxd ("0")
