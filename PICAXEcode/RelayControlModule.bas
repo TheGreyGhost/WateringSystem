@@ -17,8 +17,10 @@ symbol MY_BYTEID = "A"
 ' C.3 = reprogram mode.  if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485 and wait for reprogramming 
 
 symbol RS485_IN = C.5		
+symbol RS485_IN_SERPIN = 5
 symbol RS485_DIR = C.4
 symbol RS485_OUT = C.0
+symbol RS485_OUT_SERPIN = 0
 
 symbol RELAY_DATA = C.0
 symbol RELAY_CLOCK = C.1
@@ -77,15 +79,12 @@ symbol i = b13	'used by crc16
 symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
-
 main:
 	pullup ON
   low RELAY_CLOCK
   low RELAY_LATCH
 	low RS485_DIR				'receive
 	pause 50
-
-goto rs485TestEcho:
 
 ' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
 waitwhilereprogramming:
@@ -180,11 +179,11 @@ latchrelaysstate:
 
 waitforfirst:
 	gosub rs485modeSetToRead
-  serrxd inputAttentionByte 
+  serin RS485_IN_SERPIN, T4800_4, inputAttentionByte 
 		
 	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
   bptr = IO_BUFFER_BPTR
-  serrxd [1000, timeout],@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
+  serin [1000, timeout], RS485_IN_SERPIN, T4800_4, @bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
 	' ioByteId  = {BYTEID}
 	' ioByteCommand  = {BYTECOMMAND}
 	' ioParameterB0 -> ioParameterB3  = {DWORDCOMMANDPARAM}
@@ -196,6 +195,7 @@ waitforfirst:
 		goto waitforfirst
 	end if
 
+  ' formulate response, place into the io buffer 
 	pause 100
 	if ioByteCommand = 100 then 
 		gosub cmd100
@@ -205,12 +205,16 @@ waitforfirst:
 		gosub cmd102
 	else
 		gosub cmdinvalid
-	end if
+  end if
+
+	' send the response 
 	gosub calculatecrc16
 	gosub rs485modeSetToWrite
 	bptr = IO_BUFFER_BPTR
-	sertxd ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
+	serout RS485_IN_SEROUT, T4800_4, ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
 	gosub rs485modeSetToRead
+	
+	' execute command (if relevant)
 	if ioByteCommand = 102 then
 		relayTargetStates = ioParameterB0
 		gosub changestates

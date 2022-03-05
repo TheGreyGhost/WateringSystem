@@ -1,0 +1,184 @@
+#include <ctype.h>
+#include <SoftwareSerial.h>
+#include "Commands.h"
+#include "SystemStatus.h"
+#include "SlaveComms.h"
+
+const int MAX_COMMAND_LENGTH = 30;
+const int COMMAND_BUFFER_SIZE = MAX_COMMAND_LENGTH + 2;  // if buffer fills to max size, truncation occurs
+int commandBufferIdx = -1;
+char commandBuffer[COMMAND_BUFFER_SIZE];  
+const char COMMAND_START_CHAR = '!';
+
+void setupCommands()
+{
+}
+
+// parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed
+// returns false if no valid number found (without altering retval)
+bool parseLongFromString(const char *buffer, const char * &nextUnparsedChar, long &retval)
+{
+  while (isspace(*buffer)) {
+    ++buffer;
+  }
+  nextUnparsedChar = buffer;
+  if (!isdigit(*buffer) && *buffer != '-') return false;
+  char *forceNonConst = (char *)nextUnparsedChar;
+  retval = strtol(buffer, &forceNonConst, 10);
+  nextUnparsedChar = (const char *)forceNonConst;
+  return true;
+}
+
+// parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed
+// returns false if no valid number found (without altering retval)
+bool parseULongFromHexString(const char *buffer, const char * &nextUnparsedChar, unsigned long &retval)
+{
+  while (isspace(*buffer)) {
+    ++buffer;
+  }
+  nextUnparsedChar = buffer;
+  if (!isdigit(*buffer) && !(*buffer >= 'a' && *buffer <='f') && !(*buffer >= 'A' && *buffer <='F')) return false;
+  char *forceNonConst = (char *)nextUnparsedChar;
+  retval = strtol(buffer, &forceNonConst, 16);
+  nextUnparsedChar = (const char *)forceNonConst;
+  return true;
+}
+
+// parse a long from the given string, returns in retval.  Also returns the ptr to the next character which wasn't parsed
+// returns false if no valid number found (without altering retval)
+bool parseFloatFromString(const char *buffer, const char * &nextUnparsedChar, float &retval)
+{
+  while (isspace(*buffer)) {
+    ++buffer;
+  }
+  nextUnparsedChar = buffer;
+  if (!isdigit(*buffer) && *buffer != '-') return false;
+  char *forceNonConst = (char *)nextUnparsedChar;
+  retval = (float)strtod(buffer, &forceNonConst);
+  nextUnparsedChar = (const char *)forceNonConst;
+  return true;
+}
+
+// execute the command encoded in commandString.  Null-terminated
+void executeCommand(char command[]) 
+{
+  bool commandIsValid = false;
+  switch (command[0]) {
+    case '?': {
+      commandIsValid = true;
+      console->println("commands (turn CR+LF on):");
+      console->println("!s {byteID} {byteCommand} {dwordParameter}.  = Send to RS485 Example !s 5A 34 FF03 ");
+      console->println("!r+ {byteID} {byteRelayNumber 0 - 7} = remote turn on relay # Example !ron 3B 3");
+      console->println("!r- {byteID} {byteRelayNumber 0 - 7} = remote turn off relay # Example !ron 3B 3");
+      console->println("!rr {byteID} = remote turn off all relays  Example !rr 3B");
+      console->println("!rs {byteID} = read status of remote relays Example !rs 3B");
+      console->println("!r {byteID} = read status of remote relays Example !rs 3B");
+      break;
+    }
+    case 'C':
+    case 'c':
+    case 'L':
+    case 'l':
+    case 'D':
+    case 'd': {
+      commandIsValid = true;
+      pulsetrain(command, timedelay);
+      break;
+    }
+    case 't': {
+      commandIsValid = true; 
+      long retval;
+      const char *nextUnparsedChar;
+      bool success = parseLongFromString(command+1, nextUnparsedChar, retval);
+      if (success) {
+        timedelay = retval;
+        if (timedelay < 10) timedelay = 10;
+        if (timedelay > 10000) timedelay = 10000;
+        console->print("time delay set to: ");
+        console->println(timedelay); 
+      } else {
+        console->println("invalid time delay specified"); 
+      }
+      break;
+    }
+    case 'r': {
+      commandIsValid = true; 
+      unsigned long retval;
+      unsigned char byteid;
+      unsigned char bytecommand;
+      unsigned long dwordparameter;
+      
+      const char *nextUnparsedChar;
+      bool success = parseULongFromHexString(command+1, nextUnparsedChar, retval);
+      if (success && retval <= 0xFF) {
+        byteid = (unsigned char)retval;
+        success = parseULongFromHexString(nextUnparsedChar, nextUnparsedChar, retval);
+      }
+      if (success && retval <= 0xFF) {
+        bytecommand = (unsigned char)retval;
+        success = parseULongFromHexString(nextUnparsedChar, nextUnparsedChar, retval);
+      }
+      if (success) {
+        dwordparameter = retval;
+        success = sendCommand(byteid, bytecommand, dwordparameter);
+        if (!success) {
+          console->println("transmission failed"); 
+        }
+      } else {
+        console->println("invalid parameters; type !? for help"); 
+      }
+      break;
+    }
+    case 's': {
+      commandIsValid = true; 
+      bool success = sendCommandTestChar();
+      console->print("bytes written:");
+      console->println(success);
+      if (!success) {
+        console->println("transmission failed"); 
+      }
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+
+  if (!commandIsValid) {
+    console->print("unknown command:");
+    console->println(command);
+    console->println("use ? for help");
+  }
+}
+
+// look for incoming serial input (commands); collect the command and execute it when the entire command has arrived.
+void tickCommands()
+{
+  while (consoleInput->available()) {
+    if (commandBufferIdx < -1  || commandBufferIdx > COMMAND_BUFFER_SIZE) {
+      assertFailureCode = ASSERT_INDEX_OUT_OF_BOUNDS;
+      commandBufferIdx = -1;
+    }
+    int nextChar = consoleInput->read();
+    if (nextChar == COMMAND_START_CHAR) {
+      commandBufferIdx = 0;        
+    } else if (nextChar == '\n') {
+      if (commandBufferIdx == -1) {
+        console->println("Type !? for help");
+      } else if (commandBufferIdx > 0) {
+        if (commandBufferIdx > MAX_COMMAND_LENGTH) {
+          commandBuffer[MAX_COMMAND_LENGTH] = '\0';
+          console->print("Command too long:"); console->println(commandBuffer);
+        } else {
+          commandBuffer[commandBufferIdx++] = '\0';
+          executeCommand(commandBuffer);
+        } 
+        commandBufferIdx = -1; 
+      }
+    } else {
+      if (commandBufferIdx >= 0 && commandBufferIdx < COMMAND_BUFFER_SIZE) {
+        commandBuffer[commandBufferIdx++] = nextChar;
+      }
+    }
+  }
+}
