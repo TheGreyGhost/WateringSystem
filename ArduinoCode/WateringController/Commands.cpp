@@ -4,6 +4,8 @@
 #include "SystemStatus.h"
 #include "SlaveComms.h"
 
+boolean parseAndExecuteRcommand(char command[], Print *errorconsole);
+
 const int MAX_COMMAND_LENGTH = 30;
 const int COMMAND_BUFFER_SIZE = MAX_COMMAND_LENGTH + 2;  // if buffer fills to max size, truncation occurs
 int commandBufferIdx = -1;
@@ -68,40 +70,14 @@ void executeCommand(char command[])
       commandIsValid = true;
       console->println("commands (turn CR+LF on):");
       console->println("!s {byteID} {byteCommand} {dwordParameter}.  = Send to RS485 Example !s 5A 34 FF03 ");
-      console->println("!r+ {byteID} {byteRelayNumber 0 - 7} = remote turn on relay # Example !ron 3B 3");
-      console->println("!r- {byteID} {byteRelayNumber 0 - 7} = remote turn off relay # Example !ron 3B 3");
-      console->println("!rr {byteID} = remote turn off all relays  Example !rr 3B");
-      console->println("!rs {byteID} = read status of remote relays Example !rs 3B");
-      console->println("!r {byteID} = read status of remote relays Example !rs 3B");
+      console->println("!r+ {byteID} {byteRelayNumber 0 - 7} = remote turn on relay # Example !r+ 3B 3");
+      console->println("!r- {byteID} {byteRelayNumber 0 - 7} = remote turn off relay # Example !r- 3B 3");
+      console->println("!r0 {byteID} = remote turn off all relays  Example !r0 3B");
+      console->println("!rr {byteID} = read relay status of remote relays Example !rr 3B");
+      console->println("!rs {byteID} = read status of remote controller Example !rs 3B");
       break;
     }
-    case 'C':
-    case 'c':
-    case 'L':
-    case 'l':
-    case 'D':
-    case 'd': {
-      commandIsValid = true;
-      pulsetrain(command, timedelay);
-      break;
-    }
-    case 't': {
-      commandIsValid = true; 
-      long retval;
-      const char *nextUnparsedChar;
-      bool success = parseLongFromString(command+1, nextUnparsedChar, retval);
-      if (success) {
-        timedelay = retval;
-        if (timedelay < 10) timedelay = 10;
-        if (timedelay > 10000) timedelay = 10000;
-        console->print("time delay set to: ");
-        console->println(timedelay); 
-      } else {
-        console->println("invalid time delay specified"); 
-      }
-      break;
-    }
-    case 'r': {
+    case 's': {
       commandIsValid = true; 
       unsigned long retval;
       unsigned char byteid;
@@ -129,14 +105,8 @@ void executeCommand(char command[])
       }
       break;
     }
-    case 's': {
-      commandIsValid = true; 
-      bool success = sendCommandTestChar();
-      console->print("bytes written:");
-      console->println(success);
-      if (!success) {
-        console->println("transmission failed"); 
-      }
+    case 'r': {
+      commandIsValid = parseAndExecuteRcommand(command, console);
       break;
     }
     default: {
@@ -149,6 +119,70 @@ void executeCommand(char command[])
     console->println(command);
     console->println("use ? for help");
   }
+}
+
+// parse r+, r- , r0, rr, rs
+// command[0] is the leading r
+// returns false if command not recognised; prints error to console as well
+boolean parseAndExecuteRcommand(char command[], Print *errorconsole) 
+{
+  const unsigned long MIN_RELAY_NUMBER = 0;
+  const unsigned long MAX_RELAY_NUMBER_PLUS_ONE = 8;
+  bool needByteRelayNumber = false;
+  unsigned long retval;
+  unsigned char byteid;
+  unsigned char relaynumber;   
+  
+  switch(command[1]) {
+    case '+':
+    case '-': {
+      needByteRelayNumber = true;
+      break;
+    }
+    case '0':
+    case 'r':
+    case 's': {
+      break;
+    }  
+    default: {
+      return false; 
+    }
+  }
+
+  const char *nextUnparsedChar;
+  bool success = parseULongFromHexString(command+2, nextUnparsedChar, retval);
+  if (success && retval <= 0xFF) {
+    byteid = (unsigned char)retval;
+    if (needByteRelayNumber) {
+      success = parseULongFromHexString(nextUnparsedChar, nextUnparsedChar, retval);
+      if (success && retval >= MIN_RELAY_NUMBER && retval < MAX_RELAY_NUMBER_PLUS_ONE) {
+        relaynumber = (unsigned char)retval;
+      }
+    }  
+  }
+  if (!success) {
+    errorconsole->println("invalid parameters; type !? for help"); 
+    return true;
+  }
+
+  switch(command[1]) {
+    case '+': {
+      
+    }
+    case '-': {
+      needByteRelayNumber = true;
+      break;
+    }
+    case '0':
+    case 'r':
+    case 's': {
+      break;
+    }  
+    default: {
+      return false; 
+    }
+  }
+  
 }
 
 // look for incoming serial input (commands); collect the command and execute it when the entire command has arrived.

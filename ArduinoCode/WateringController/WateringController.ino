@@ -1,5 +1,6 @@
 /********************************************************************/
 #include "WateringController.h"
+#include "SlaveComms.h"
 #include "Commands.h"
 #include "SystemStatus.h"
 #include <SoftwareSerial.h>

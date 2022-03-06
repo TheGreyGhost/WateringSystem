@@ -7,17 +7,16 @@ symbol MY_BYTEID = "A"
 
 ' hardware connections:
 ' C.0 = dual purpose: serial out (to RS485 chip), and data for Relay module
-' C.5 = serial in (from RS485 chip)
+' C.3 = serial in (from RS485 chip)
 ' C.4 = serial direction (RS485 chip selection): high = send, low = receive
-'    C.5 is valid when C.4 is low; C.5 is high impedance when C.4 is high.
+'    C.3 is valid when C.4 is low; C.3 is high impedance when C.4 is high.
 '
 ' C.1 = clock for Relay module
 ' C.2 = latch for Relay module
-'
-' C.3 = reprogram mode.  if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485 and wait for reprogramming 
 
-symbol RS485_IN = C.5		
-symbol RS485_IN_SERPIN = 5
+
+symbol RS485_IN = C.3	
+symbol RS485_IN_SERPIN = 3
 symbol RS485_DIR = C.4
 symbol RS485_OUT = C.0
 symbol RS485_OUT_SERPIN = 0
@@ -25,8 +24,6 @@ symbol RS485_OUT_SERPIN = 0
 symbol RELAY_DATA = C.0
 symbol RELAY_CLOCK = C.1
 symbol RELAY_LATCH = C.2
-
-symbol REPROGRAM_MODE_PIN = pinC.3
 '
 ' The relay module functions as follows:
 ' It has three inputs- data, clock, and latch.
@@ -80,18 +77,11 @@ symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
 main:
-	pullup ON
+	pullup %00001000		' pullup on pin C.3; when RS485 is set to output mode, ensures this pin will stay high.
   low RELAY_CLOCK
   low RELAY_LATCH
 	low RS485_DIR				'receive
 	pause 50
-
-' if power up with grounded REPROGRAM_MODE_PIN, tristate the RS485
-waitwhilereprogramming:
-  if REPROGRAM_MODE_PIN = 0 then 
-		high RS485_DIR
-		goto waitwhilereprogramming
-	endif	 
 
 ' set system to idle, set all relays to off, and wait for RS485 comms
 	disconnect
@@ -211,7 +201,7 @@ waitforfirst:
 	gosub calculatecrc16
 	gosub rs485modeSetToWrite
 	bptr = IO_BUFFER_BPTR
-	serout RS485_IN_SEROUT, T4800_4, ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
+	serout RS485_OUT_SERPIN, T4800_4, ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
 	gosub rs485modeSetToRead
 	
 	' execute command (if relevant)

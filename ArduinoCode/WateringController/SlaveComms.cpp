@@ -65,6 +65,12 @@ bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long 
   return (byteswritten == BUFFLEN);
 }
 
+
+boolean readReply(unsigned char byteid, unsigned char bytecommand, unsigned long &receivedStatus) {
+  
+}
+
+
 unsigned short crc16(const unsigned char* data_p, unsigned char length){
     unsigned char x;
     unsigned short crc = 0xFFFF;
