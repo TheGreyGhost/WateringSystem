@@ -43,6 +43,7 @@ void tickSlaveComms()
 // returns true for success, false otherwise
 bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long dwordparameter)
 {
+  const char ATTENTION_BYTE = '!';
   const int BASELEN = 1+1+4;
   const int CRC16LEN = 2;
   const int BUFFLEN = BASELEN + CRC16LEN;
@@ -60,7 +61,14 @@ bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long 
   writebuffer[BASELEN+1] = (checksum>>8) & 0xff;
 
   digitalWrite(RS485_SENDMODE_PIN, HIGH);
-  int byteswritten = rs485serial.write(writebuffer, BUFFLEN);
+  int byteswritten = rs485serial.write(ATTENTION_BYTE);
+  Serial.println(ATTENTION_BYTE, HEX); 
+  delay(10);
+  for (int i = 0; i < 8; ++i) {
+   byteswritten = rs485serial.write(writebuffer[i]);
+   Serial.println(writebuffer[i], HEX); 
+   delay(10);
+  }
   digitalWrite(RS485_SENDMODE_PIN, LOW);
   return (byteswritten == BUFFLEN);
 }

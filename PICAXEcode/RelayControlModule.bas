@@ -170,20 +170,53 @@ latchrelaysstate:
 waitforfirst:
 	gosub rs485modeSetToRead
   serin RS485_IN_SERPIN, T4800_4, inputAttentionByte 
+	
+;	for i = 0 to 7
+;		x = inputAttentionByte and 1
+;		if x = 1 then
+;			high C.1
+;			pause 1000
+;			low C.1 
+;			pause 1000
+;		else 
+;			high C.1
+;			pause 500
+;			low C.1 
+;			pause 1500
+;		end if
+;	  inputAttentionByte = inputAttentionByte / 2
+;	next i
+;	
+	toggle C.1 
 		
 	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
-  bptr = IO_BUFFER_BPTR
+	
+	bptr = IO_BUFFER_BPTR
   serin [1000, timeout], RS485_IN_SERPIN, T4800_4, @bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
+	high C.2
+	pause 2000
+	low C.2
+	pause 1000
 	' ioByteId  = {BYTEID}
 	' ioByteCommand  = {BYTECOMMAND}
 	' ioParameterB0 -> ioParameterB3  = {DWORDCOMMANDPARAM}
 	' ioCRCb0 -> ioCRCb1  = {CRC16}
 	if inputAttentionByte <> "!" or ioByteId <> MY_BYTEID then goto waitforfirst
+	high C.2
+	pause 3000
+	low C.2
+	pause 1000
+		
 	gosub checkcrc16
 	if crc16value <> 0 then
 		errorcount2 = errorcount2 + 1 MAX 250
 		goto waitforfirst
 	end if
+
+	high C.2
+	pause 3000
+	low C.2
+	pause 1000
 
   ' formulate response, place into the io buffer 
 	pause 100
@@ -214,6 +247,19 @@ waitforfirst:
 	
 timeout:
   errorcount1 = errorcount1 + 1 MAX 250
+	high C.2
+	pause 500
+	low C.2
+	pause 500	
+	high C.2
+	pause 500
+	low C.2
+	pause 500	
+	high C.2
+	pause 500
+	low C.2
+	pause 500	
+	
 	goto waitforfirst
   
 	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3
