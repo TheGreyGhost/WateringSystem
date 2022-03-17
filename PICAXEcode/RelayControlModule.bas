@@ -29,8 +29,8 @@ symbol RELAY_LATCH = C.2
 ' It has three inputs- data, clock, and latch.
 ' The data and clock are used to control 8-bit shift register.
 ' Each time there is a falling clock edge, it shifts the data bit into the register.
-' On a falling latch edge, the relay module outputs are all turned off
-' On a rising latch edge, the relay module outputs are latched from the shift register.
+' On a falling (rising?)latch edge, the relay module outputs are all turned off 
+' On a rising (falling?)latch edge, the relay module outputs are latched from the shift register.
 ' NB the PICAXE outputs are inverted when passed to the Relay Module so the PICAXE pinouts are:
 '  C.0 = data inverse
 '  C.1 = rising clock edge to clock data in

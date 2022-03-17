@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name PICAXEs)(type Legacy)(uri C:/Users/Richard/Documents/ArduinoProjects/WateringSystem/PCBs/PICAXE.lib)(options "")(descr ""))
+  (lib (name RvWsymbols)(type Legacy)(uri C:/Users/Richard/Documents/ArduinoProjects/WateringSystem/PCBs/RvWSymbols.lib)(options "")(descr ""))
+)
