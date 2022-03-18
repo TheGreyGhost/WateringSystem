@@ -14,7 +14,6 @@ symbol MY_BYTEID = "A"
 ' C.1 = clock for Relay module
 ' C.2 = latch for Relay module
 
-
 symbol RS485_IN = C.3	
 symbol RS485_IN_SERPIN = 3
 symbol RS485_DIR = C.4
@@ -72,7 +71,7 @@ symbol IO_BUFFER_BASE_LENGTH = 6 ' number of bytes in the input output buffer fo
 symbol errorcount1 = b10  '  (number of timeouts during serial receive)
 symbol errorcount2 = b11  ' (number of CRC16 errors during serial receive)
 symbol errorcount3 = b12  ' unused 
-symbol i = b13	'used by crc16
+symbol i = b13	'used by crc16 
 symbol x = b14  'used by crc16
 symbol x2 = b15 'used by crc16
 
@@ -170,53 +169,23 @@ latchrelaysstate:
 waitforfirst:
 	gosub rs485modeSetToRead
   serin RS485_IN_SERPIN, T4800_4, inputAttentionByte 
-	
-;	for i = 0 to 7
-;		x = inputAttentionByte and 1
-;		if x = 1 then
-;			high C.1
-;			pause 1000
-;			low C.1 
-;			pause 1000
-;		else 
-;			high C.1
-;			pause 500
-;			low C.1 
-;			pause 1500
-;		end if
-;	  inputAttentionByte = inputAttentionByte / 2
-;	next i
-;	
-	toggle C.1 
 		
 	if inputAttentionByte <> "$" and inputAttentionByte <> "!" then goto waitforfirst
 	
 	bptr = IO_BUFFER_BPTR
   serin [1000, timeout], RS485_IN_SERPIN, T4800_4, @bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc 
-	high C.2
-	pause 2000
-	low C.2
-	pause 1000
+
 	' ioByteId  = {BYTEID}
 	' ioByteCommand  = {BYTECOMMAND}
 	' ioParameterB0 -> ioParameterB3  = {DWORDCOMMANDPARAM}
 	' ioCRCb0 -> ioCRCb1  = {CRC16}
 	if inputAttentionByte <> "!" or ioByteId <> MY_BYTEID then goto waitforfirst
-	high C.2
-	pause 3000
-	low C.2
-	pause 1000
 		
 	gosub checkcrc16
 	if crc16value <> 0 then
 		errorcount2 = errorcount2 + 1 MAX 250
 		goto waitforfirst
 	end if
-
-	high C.2
-	pause 3000
-	low C.2
-	pause 1000
 
   ' formulate response, place into the io buffer 
 	pause 100
@@ -234,7 +203,14 @@ waitforfirst:
 	gosub calculatecrc16
 	gosub rs485modeSetToWrite
 	bptr = IO_BUFFER_BPTR
-	serout RS485_OUT_SERPIN, T4800_4, ("$",@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc,@bptrinc)
+	
+	'transmit the response with a short delay between each byte
+	serout RS485_OUT_SERPIN, T4800_4, ("$")
+	for i = 1 to 8
+		pause 10
+		serout RS485_OUT_SERPIN, T4800_4, (@bptrinc)
+	next i
+
 	gosub rs485modeSetToRead
 	
 	' execute command (if relevant)
@@ -247,19 +223,6 @@ waitforfirst:
 	
 timeout:
   errorcount1 = errorcount1 + 1 MAX 250
-	high C.2
-	pause 500
-	low C.2
-	pause 500	
-	high C.2
-	pause 500
-	low C.2
-	pause 500	
-	high C.2
-	pause 500
-	low C.2
-	pause 500	
-	
 	goto waitforfirst
   
 	' calculate crc16 of the bytes in inputByteId,inputByteCommand, inputParameterB0  - inputParameterB3
@@ -341,99 +304,4 @@ rs485modeSetToWrite:
 	endif
 	return
 
-rs485TestEcho:
-	disconnect
-	low RELAY_LATCH
-	gosub rs485modeSetToRead
-	serin [5000, rteTimeOut], 5, T4800_4, b16
-	high RELAY_LATCH
-	pause 1000
-	
-	gosub rs485modeSetToWrite
-	serout 1, T4800_4, (b16)
-	goto rs485TestEcho
 
-rteTimeOut:
-	gosub rs485modeSetToWrite
-	serout 1, T4800_4, ("*")
-	serout 1, T4800_4, (10, 13)
-	goto rs485TestEcho
-	
-rs485DebugWriteTest:
-	gosub rs485modeSetToWrite
-
-	sertxd ("0")
-	pause 1000 
-	sertxd ("1")
-	pause 1000 
-
-	sertxd ("2")
-	pause 1000 
-
-	sertxd ("3")
-	pause 1000 
-
-	sertxd ("4")
-	pause 1000 
-
-	sertxd ("5")
-	pause 1000 
-
-	sertxd ("6")
-	pause 1000 
-
-	sertxd ("7")
-	pause 1000 
-
-	sertxd ("8")
-	pause 1000 
-
-	sertxd ("9")
-	pause 1000 
-
-	sertxd ("a")
-	pause 1000 
-
-	sertxd ("A")
-	pause 3000 
-	goto rs485DebugWriteTest
-	
-rs485DebugWriteTest2:
-	gosub rs485modeSetToWrite
-
-	serout 1, T4800_4, ("0")
-	pause 1000 
-	
-	serout 1, T4800_4, ("1")
-	pause 1000 
-
-	serout 1, T4800_4, ("2")
-	pause 1000 
-
-	serout 1, T4800_4, ("3")
-	pause 1000 
-
-	serout 1, T4800_4, ("4")
-	pause 1000 
-
-	serout 1, T4800_4, ("5")
-	pause 1000 
-
-	serout 1, T4800_4, ("6")
-	pause 1000 
-
-	serout 1, T4800_4, ("7")
-	pause 1000 
-
-	serout 1, T4800_4, ("8")
-	pause 1000 
-
-	serout 1, T4800_4, ("9")
-	pause 1000 
-
-	serout 1, T4800_4, ("a")
-	pause 1000 
-
-	serout 1, T4800_4, ("A")
-	pause 3000 
-	goto rs485DebugWriteTest2
