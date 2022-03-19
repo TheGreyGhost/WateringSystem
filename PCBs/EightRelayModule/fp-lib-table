@@ -1,3 +1,3 @@
 (fp_lib_table
-  (lib (name RvWfootprints)(type KiCad)(uri C:/Users/Richard/Documents/ArduinoProjects/WateringSystem/PCBs/RvWfootprints.pretty)(options "")(descr ""))
+  (lib (name RvWfootprints)(type KiCad)(uri ${KIPRJMOD}/../RvWfootprints.pretty)(options "")(descr ""))
 )

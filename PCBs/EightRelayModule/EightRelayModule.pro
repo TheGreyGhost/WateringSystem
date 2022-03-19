@@ -29,5 +29,7 @@ version=1
 NetIExt=net
 [eeschema]
 version=1
-LibDir=
+LibDir=${KIPRJMOD}/..
 [eeschema/libraries]
+LibName1=PICAXE
+LibName2=RvWSymbols
