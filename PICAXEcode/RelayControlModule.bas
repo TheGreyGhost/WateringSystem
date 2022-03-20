@@ -1,3 +1,28 @@
+DEBUG NOTES CURRENTLY:
+Expected response is 
+17:16:59.134 -> 24 41 66 FF 0 0 0 5A BE 
+But sometimes get
+17:17:07.027 -> 0 F2 41 66 FF 0 0 0 5A BE 
+
+Only occurs after switching the relays
+!s 41 66 0 vs !s 41 66 ff
+
+Current state | new state
+ff 0 -> no
+0 0 no
+0 0 no
+0 0 no
+0 0 {five times all no}
+0 FF no
+FF FF yes
+FF FF {five times all no}
+FF FE no
+FE FE yes 
+
+24 41 0010 0100  0100 0001
+0  F2 0000 0000  1111 0010
+
+
 ' The RelayControlModule has two major functions:
 ' 1) Communicate with the master over RS485
 ' 2) Manipulate the outputs on the attached Relay Control Module (up to 8)
