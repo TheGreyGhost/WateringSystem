@@ -1,28 +1,3 @@
-DEBUG NOTES CURRENTLY:
-Expected response is 
-17:16:59.134 -> 24 41 66 FF 0 0 0 5A BE 
-But sometimes get
-17:17:07.027 -> 0 F2 41 66 FF 0 0 0 5A BE 
-
-Only occurs after switching the relays
-!s 41 66 0 vs !s 41 66 ff
-
-Current state | new state
-ff 0 -> no
-0 0 no
-0 0 no
-0 0 no
-0 0 {five times all no}
-0 FF no
-FF FF yes
-FF FF {five times all no}
-FF FE no
-FE FE yes 
-
-24 41 0010 0100  0100 0001
-0  F2 0000 0000  1111 0010
-
-
 ' The RelayControlModule has two major functions:
 ' 1) Communicate with the master over RS485
 ' 2) Manipulate the outputs on the attached Relay Control Module (up to 8)
@@ -73,6 +48,11 @@ symbol RELAY_LATCH = C.2
 ' b7 = RS485 send/receive mode (0 = receive, 1 = send)
 ' b8/b9 (w4) = crc calculation temp
 
+' NOTE
+' If the relay module is powered up after the PICAXE, it defaults to all relays on!
+' Possible workaround:
+' reserve relay bit 0; wire it in series with the rest so that relay 0 must be off for the others to receive power
+
 symbol relayTargetStates = b0
 symbol relayCurrentStates = b1
 symbol rs485Mode = b7
@@ -118,7 +98,9 @@ main:
 	
   relayByteToSend = 0
   gosub sendrelaysbyte
-
+	pause 50
+	gosub latchrelaysstate
+	pause 450	
 	goto waitforfirst
 	
 '  change from the current states (b1) to the target states (b0), one bit at a time, waiting 500ms between bit switches
@@ -131,7 +113,7 @@ changestates:
 		b6 = relayCurrentStates xor relayTargetStates
 		b6 = b6 and b5
 		if b6 <> 0 then
-	  	b3 = relayCurrentStates xor b5 	
+	  	relayByteToSend = relayCurrentStates xor b5 	
 	  	gosub sendrelaysbyte
 			pause 50
 			gosub latchrelaysstate
@@ -141,7 +123,7 @@ changestates:
   loop until b5 = 0
   return
   
-' byte to send is in b3
+' byte to send is in relayByteToSend
 sendrelaysbyte:
   gosub rs485modeSetToRead
 
@@ -323,6 +305,8 @@ rs485modeSetToRead:
   
 rs485modeSetToWrite:
   if rs485Mode = 0 then
+		high RS485_OUT		   'make sure to place RS485 data line into neutral (high) before switching to write mode
+		pause 5
 		rs485Mode = 1
 		high RS485_DIR
 		pause 5
