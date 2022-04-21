@@ -2,6 +2,10 @@
 #define COMMANDS_H  
 #include <Arduino.h>
 
+/*
+ * Communicate with the Raspberry Pi
+ */
+
 // prepare for receiving/executing commands
 void setupCommands();
 

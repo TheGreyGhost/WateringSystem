@@ -1,6 +1,11 @@
 #ifndef SLAVECOMMS_H
 #define SLAVECOMMS_H
 
+/*Send commands to slaves on the RS485 bus
+ * 
+ * 
+ */
+
 void setupSlaveComms();
 void tickSlaveComms();
 
