@@ -1,3 +1,6 @@
+#ifndef SEQUENCE_H
+#define SEQUENCE_H
+
 /*
 ValveSequence is a sequence of on & off actions for valves.
 For example - 
@@ -25,33 +28,53 @@ inspectors:
 
 */
 
-
-class ValveSequence {
-public:
-  
-
-private:
-  ValveTime m_ValveTimes[];
-  int m_ValveTimesCount;  
-
-
-}
-
 class ValveTime {
   public:
-    ValveTime(Valve &valve, startTimeSeconds, duration) {
-      m_valve = valve;
-      m_startTimeSeconds = startTimeSeconds;
-      m_endTimeSeconds = startTimeSeconds + duration;	
-    }
-    
-    const Valve &getValve() {return (const)m_valve;}	
+    ValveTime(Valve &valve, long startTimeSeconds, long duration);
+    const Valve &getValve() {return (const)m_valve;}  
     long getStartTimeSeconds() {return m_startTimeSeconds;}
     long getEndTimeSeconds() {return m_endTimeSeconds;}
-	
+
+    ValveTime(const ValveTime &src); 
+    ValveTime &operator=(const ValveTime &src);
+    bool operator==(const ValveTime &rhs) {return m_ID == rhs.m_ID};
+    bool operator<=(const ValveTime &rhs) {return m_ID <= rhs.m_ID};
+    bool operator!=(const ValveTime &rhs) {return m_ID != rhs.m_ID};
+    bool operator<(const ValveTime &rhs) {return m_ID < rhs.m_ID};
+    
+}
+
   private:
     Valve m_valve;
     long  m_startTimeSeconds;
     long  m_endTimeSeconds;
-
 }
+
+class ValveSequence {
+public:
+  ValveSequence() {
+    
+  }
+  
+  ValveSequence (const ValveSequence &old_obj) {
+     
+  }
+  ~ValveSequence() {
+    
+  }
+
+ long getElapsedTimeSeconds();
+ long getRemainingTimeSeconds();
+  getValveList(on, off, all) - returns a list of valves which match the given valve status
+4) getCurrentExpectedFlowrate() - what is the expected flowrate of the currently open valves?
+5) getMaximumExpectedFlowrate() - what is the expected maximum flowrate for the current sequence?
+6) checkForErrors(max flowrate) - are there any logic sequence errors? maximum flowrate exceeded, too many valves at once (current draw), maximum duration exceeded
+
+private:
+  ValveTime *m_ValveTimes;  //sorted into ascending order of start time
+  int m_ValveTimesCount;  
+}
+
+
+
+#endif
