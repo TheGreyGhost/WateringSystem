@@ -10,6 +10,29 @@ const int RS485_SENDMODE_PIN = 12;
 
 SoftwareSerial rs485serial(RS485_RX_PIN, RS485_TX_PIN, false);  // use TRUE logic i.e. IDLE = 5 volts
 
+enum BusState {IDLE_BUS, SENDING, WAITING_FOR_REPLY, RECEIVING, ERROR_RECOVERY};
+enum ErrorState {OK, REPLY_RECEIVED_WHEN_NOT_WAITING, TIMEOUT_WAITING_FOR_REPLY, TIMEOUT_DURING_REPLY, REPLY_DID_NOT_START_WITH_ACK_BYTE, UNEXPECTED_BYTE_ID, REPLY_TOO_LONG, CRC_FAILURE, ASSERT_ERROR}
+
+ErrorState lastError;
+BusState busState;
+unsigned long millisLastTransition;
+int replyidx;
+
+const char ATTENTION_BYTE = '!';
+const int BASELEN = 1+1+4;
+const int CRC16LEN = 2;
+const int BUFFLEN = BASELEN + CRC16LEN;
+unsigned char writebuffer[BUFFLEN];
+
+const char ACK_BYTE = '$';
+unsigned char replybuffer[BUFFLEN];
+uint8_t targetModuleID;
+
+const unsigned long RECOVERY_MILLIS = 10000; // length of time to wait for the bus to recover (waits until the bus is silent for this long)
+const unsigned long REPLY_START_TIMEOUT_MILLIS = 1000; // length of time to wait for a response to start after sending a message
+const unsigned long REPLY_CHARACTER_TIMEOUT_MILLIS = 1000; // length of time to wait for the end of a response once it has started
+const unsigned long REPLY_END_WAIT_MILLIS = 500; // length of time to wait after the expected end of a reply
+
 void setupSlaveComms()
 {
   pinMode(RS485_RX_PIN, INPUT);
@@ -17,37 +40,98 @@ void setupSlaveComms()
   pinMode(RS485_SENDMODE_PIN, OUTPUT);
   digitalWrite(RS485_SENDMODE_PIN, LOW);
   rs485serial.begin(4800);
+  busState = IDLE_BUS;
+  lastError = OK;
 }
 
-void tickSlaveComms()
+void tickSlaveComms(TimeStamp timenow)
 {
-  static unsigned long lasttime = 0;
-  
-  if (rs485serial.available()) {
+  while (rs485serial.available()) {
     unsigned char c = rs485serial.read();
-    console->print(c, HEX);
-    console->print(" ");     
-    lasttime = millis();
+    switch (busState) {
+      case ERROR_RECOVERY:
+        enterNewBusState(ERROR_RECOVERY); 
+        break;
+      case IDLE_BUS:
+      case SENDING:
+        logError(REPLY_RECEIVED_WHEN_NOT_WAITING);
+        enterNewBusState(ERROR_RECOVERY); 
+        break;  
+      case WAITING_FOR_REPLY:
+        if (c != ACK_BYTE) {
+          logError(REPLY_DID_NOT_START_WITH_ACK_BYTE);
+          enterNewBusState(ERROR_RECOVERY); 
+        } else {
+          replyidx = 0;
+          enterNewBusState(RECEIVING); 
+        }
+        break;
+      case RECEIVING:
+        if (replyidx >= BUFFLEN) {
+          enterNewBusState(ERROR_RECOVERY); 
+          logError(REPLY_TOO_LONG);
+        } else {
+          replybuffer[replyidx++] = c;
+          enterNewBusState(RECEIVING); 
+        }
+        break;
+      default:
+        logError(ASSERT_ERROR);
+        break;
+    }
   }  
 
-  unsigned long timenow = millis();
-  if (lasttime != 0 && timenow - lasttime > 500) {
-    console->println("");
-    lasttime = 0;
+  switch (busState) {
+    case ERROR_RECOVERY:
+      if (millis() - millisLastTransition) > RECOVERY_MILLIS) enterNewBusState(IDLE_BUS); 
+      break;
+    case IDLE_BUS:
+    case SENDING:
+      break;  
+    case WAITING_FOR_REPLY:
+      if (millis() - millisLastTransition) > REPLY_START_TIMEOUT_MILLIS) {
+        logError(TIMEOUT_WAITING_FOR_REPLY);
+        enterNewBusState(ERROR_RECOVERY); 
+      }
+      break;
+    case RECEIVING:
+      if (replyidx == BUFFLEN) {
+        if (millis() - millisLastTransition) > REPLY_END_WAIT_MILLIS) {
+          enterNewBusState(IDLE_BUS);
+          parseReply();
+        }
+      } else {
+        if (millis() - millisLastTransition) > REPLY_CHARACTER_TIMEOUT_MILLIS) {
+        logError(TIMEOUT_DURING_REPLY);
+        enterNewBusState(ERROR_RECOVERY); 
+      }
+      break;
+    default:
+      logError(ASSERT_ERROR);
+      break;
   }
-  
+}
+
+void enterNewBusState(BusState newState) {
+  busState = newState;
+  millisLastTransition = millis();
+}
+
+void logError(ErrorState newError) {
+  lastError = newError;
+}
+
+bool isBusFree() {
+  return (busState == IDLE_BUS);
 }
 
 // Send the given command on the RS485 serial bus.
 // Puts the line into write mode, sends the command details including CRC16 checksum, then places line back into read mode
 // returns true for success, false otherwise
-bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long dwordparameter)
+bool sendCommand(RemoteModule &target, unsigned char byteid, unsigned char bytecommand, unsigned long dwordparameter)
 {
-  const char ATTENTION_BYTE = '!';
-  const int BASELEN = 1+1+4;
-  const int CRC16LEN = 2;
-  const int BUFFLEN = BASELEN + CRC16LEN;
-  unsigned char writebuffer[BUFFLEN];
+  if (busState != IDLE_BUS) return false;
+  targetModuleID = target.getID();
   writebuffer[0] = byteid;
   writebuffer[1] = bytecommand;
   writebuffer[2] = dwordparameter & 0xff;
@@ -60,6 +144,7 @@ bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long 
   writebuffer[BASELEN] = checksum & 0xff;
   writebuffer[BASELEN+1] = (checksum>>8) & 0xff;
 
+  enterNewBusState(SENDING);
   digitalWrite(RS485_SENDMODE_PIN, HIGH);
   int byteswritten = rs485serial.write(ATTENTION_BYTE);
   Serial.println(ATTENTION_BYTE, HEX); 
@@ -70,14 +155,32 @@ bool sendCommand(unsigned char byteid, unsigned char bytecommand, unsigned long 
    delay(10);
   }
   digitalWrite(RS485_SENDMODE_PIN, LOW);
+
+  enterNewBusState(WAITING_FOR_REPLY);
+  replyidx = 0;
+  
   return (byteswritten == BUFFLEN);
 }
 
-
-boolean readReply(unsigned char byteid, unsigned char bytecommand, unsigned long &receivedStatus) {
-  
+void parseReply() {
+  if (replyidx != BUFFLEN) {
+    logError(ASSERT_ERROR);
+    return;
+  }
+  unsigned short replyCRC16 = crc16(replybuffer, BASELEN);
+  if (replybuffer[BASELEN] != (replyCRC16 & 0xff) || replybuffer[BASELEN+1] != (replyCRC16 >> 8) & 0xff) {
+    logError(CRC_FAILURE);
+    enterNewBusState(ERROR_RECOVERY);
+    return;
+  }
+  if (replybuffer[0] != writebuffer[0]) {
+    logError(UNEXPECTED_BYTE_ID);
+    enterNewBusState(ERROR_RECOVERY);
+    return;
+  }
+  RemoteModule &target = RemoteModule::getModule(targetModuleID);
+  target.receiveMessage(replyBuffer[1], replyBuffer[2] + (replyBuffer[3] >> 8) + (replyBuffer[4] >> 16) + (replyBuffer[5] >> 24));
 }
-
 
 unsigned short crc16(const unsigned char* data_p, unsigned char length){
     unsigned char x;

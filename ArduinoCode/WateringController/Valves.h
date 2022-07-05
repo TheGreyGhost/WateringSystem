@@ -11,8 +11,9 @@ public:
   long getMaxOnTimeSeconds();
   void setFlowrateLPM(float flowrateLPM);
   void setMaxOnTimeSeconds(long timeSeconds);
-  boolean getValveState();
-  void setValveState(boolean newState);
+  bool getValveState();
+  void setValveState(bool newState);
+  int getID() const {return m_ID;}
 
   void shutAllValves();
   void loadSettings();
@@ -21,7 +22,7 @@ public:
   void tick();
 
   Valve(const Valve &src) {m_ID = src.m_ID; }
-  Valve &operator=(const Valve &src) {m_ID = src.m_ID;}
+  Valve &operator=(const Valve &src) {m_ID = src.m_ID; return *this;}
 
   // get the valve with the given ID.
   static Valve getValve(int ID) {
@@ -40,11 +41,11 @@ private:
 
   void checkID(); 
 
-  static float s_flowratesLPM[VALVE_COUNT] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f}; 
-  static long s_maxOnTimeSeconds[VALVE_COUNT] = {3600, 3600, 3600, 3600, 3600, 3600, 3600, 3600, 3600, 3600};
-  static boolean s_valveStates[VALVE_COUNT] = {false, false, false, false, false, false, false, false, false, false}; 
-  static Valve s_valves[VALVE_COUNT] = {Valve(1), Valve(2), Valve(3), Valve(4), Valve(5), Valve(6), Valve(7), Valve(8), Valve(9), Valve(10)};
-  static Valve s_dummyValve(0);
-}
+  static  float s_flowratesLPM[VALVE_COUNT];
+  static  long s_maxOnTimeSeconds[VALVE_COUNT];
+  static  bool s_valveStates[VALVE_COUNT];
+  static const Valve s_valves[VALVE_COUNT];
+  static const Valve s_dummyValve;
+};
 
 #endif

@@ -6,7 +6,7 @@ extern byte assertFailureCode;
 #define ASSERT_INVALID_SWITCH 1
 #define ASSERT_INDEX_OUT_OF_BOUNDS 2
 #define ASSERT_INVARIANT_FAILED 3
-
+#define ASSERT_PARAMETER_OUT_OF_RANGE 4
 extern Print *console;
 extern Stream *consoleInput;
 

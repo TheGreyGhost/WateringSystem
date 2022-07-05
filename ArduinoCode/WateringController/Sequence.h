@@ -1,11 +1,11 @@
 #ifndef SEQUENCE_H
 #define SEQUENCE_H
-
+#include "Valves.h"
+#include "TimeStamp.h"
 /*
 ValveSequence is a sequence of on & off actions for valves.
 For example - 
 Valve 1 on for 5 min, then Valve 2 on for 10 min, then both valves off.
-
 
 Typical usage:
 
@@ -30,56 +30,81 @@ inspectors:
 
 class ValveTime {
   public:
-    ValveTime(Valve &valve, long startTimeSeconds, long duration);
-    const Valve &getValve() {return (const)m_valve;}  
-    long getStartTimeSeconds() {return m_startTimeSeconds;}
-    long getEndTimeSeconds() {return m_endTimeSeconds;}
-
-    ValveTime(const ValveTime &src); 
-    ValveTime &operator=(const ValveTime &src);
+    ValveTime(Valve &valve, TimeStamp startTimeStamp, long durationSeconds);
+    const Valve &getValve() {return (const Valve &)m_valve;}
+    TimeStamp getStartTimeStamp() {return m_startTimeStamp;}
+    TimeStamp getEndTimeStamp() {return m_endTimeStamp;}
+    // adjust the start and end time to account for a pause and unpause
+    void resumeAfterPause(TimeStamp pauseTime, TimeStamp resumeTime);
+//    ValveTime(const ValveTime &src);
+//    ValveTime &operator=(const ValveTime &src);
 
     // the comparison operators compare the start times only.
-    bool operator==(const ValveTime &rhs) {return m_startTimeSeconds == rhs.m_startTimeSeconds};
-    bool operator<=(const ValveTime &rhs) {return m_startTimeSeconds <= rhs.m_startTimeSeconds};
-    bool operator!=(const ValveTime &rhs) {return m_startTimeSeconds != rhs.m_startTimeSeconds};
-    bool operator<(const ValveTime &rhs) {return m_startTimeSeconds < rhs.m_startTimeSeconds};
+    bool operator==(const ValveTime &rhs) {return m_startTimeStamp == rhs.m_startTimeStamp;}
+    bool operator<=(const ValveTime &rhs) {return m_startTimeStamp <= rhs.m_startTimeStamp;}
+    bool operator!=(const ValveTime &rhs) {return m_startTimeStamp != rhs.m_startTimeStamp;}
+    bool operator<(const ValveTime &rhs) {return m_startTimeStamp < rhs.m_startTimeStamp;}
+    bool operator>(const ValveTime &rhs) {return m_startTimeStamp > rhs.m_startTimeStamp;}
     ValveTime *getNext() {return m_next;}
-    void setNext(ValveTime *next) [m_next = next;}
+    void setNext(ValveTime *next) {m_next = next;}
 
   private:
     Valve m_valve;
-    long  m_startTimeSeconds;
-    long  m_endTimeSeconds;
+    TimeStamp  m_startTimeStamp;
+    TimeStamp  m_endTimeStamp;
     ValveTime *m_next;
-}
+};
 
 class ValveSequence {
 public:
-  ValveSequence() {
-    
-  }
+  ValveSequence() : m_ValveTimesHead(nullptr), m_running(false), m_paused(false) {};
   
-  ValveSequence (const ValveSequence &old_obj) {
-     
-  }
-  ~ValveSequence() {
-    
-  }
-
+  ValveSequence (const ValveSequence &old_obj);
+  ~ValveSequence();
   ValveSequence &operator=(const ValveSequence &src);
 
+  // return the time elapsed since the sequence has started.
+  // If the sequence has not started yet, returns a negative number equal to the number of seconds until the sequence starts.
+  // If the sequence is empty, returns 0
+  // If the sequence is finished, returns the duration of the entire sequence.
+  // The elapsed time will include the periods when the sequence was paused, if any
+  long getElapsedTimeSeconds();
 
+  // return the time remaining until the sequence finishes.
+  //   If the sequence has not started yet, returns the duration of the entire sequence.
+  //   If the sequence is already finished, or if the sequence is empty, returns 0.
+  long getRemainingTimeSeconds();
 
+  // returns the timestamp of the start of the sequence
+  // if the sequence is empty, returns the current time
+  TimeStamp getStartTime();
 
- long getElapsedTimeSeconds();
- long getRemainingTimeSeconds();
-  getValveList(on, off, all) - returns a list of valves which match the given valve status
-4) getCurrentExpectedFlowrate() - what is the expected flowrate of the currently open valves?
-5) getMaximumExpectedFlowrate() - what is the expected maximum flowrate for the current sequence?
-6) checkForErrors(max flowrate) - are there any logic sequence errors? maximum flowrate exceeded, too many valves at once (current draw), maximum duration exceeded
+  // returns the timestamp of the end of the sequence
+  // if the sequence is empty, returns the current time
+  TimeStamp getEndTime();
 
-  void addValveOpenTime(Valve valve, int startTimeSeconds, int durationSeconds);
+  void start() {m_running = true;}
+  void stop() {m_running = false;}
+  void pause();
+  void resume();
 
+  //  getValveList(on, off, all) - returns a list of valves which match the given valve status
+//4) getCurrentExpectedFlowrate() - what is the expected flowrate of the currently open valves?
+//5) getMaximumExpectedFlowrate() - what is the expected maximum flowrate for the current sequence?
+//6) checkForErrors(max flowrate) - are there any logic sequence errors? maximum flowrate exceeded, too many valves at once (current draw), maximum duration exceeded
+
+  void addValveOpenTime(Valve valve, TimeStamp startTimeSeconds, int durationSeconds);
+
+  // adds (merges) the src sequence into this one.
+  void addSequence(ValveSequence &src);
+
+  // adds (merges) the src sequence into this one; adjusts the timestamps so that the first timestamp in the src sequence is
+  //   advanced or delayed to newStartTime and all other timestamps advance or delay by the same amount.
+  void addSequence(ValveSequence &src, TimeStamp newStartTime);
+
+  void tick(TimeStamp timenow);
+
+  void printChain();  // for debugging test harness purposes only
 
 private:
   void checkInvariants();
@@ -87,8 +112,10 @@ private:
   void deepCopyValveTimes(ValveTime *srcHead);
   
   ValveTime *m_ValveTimesHead;  //linked list sorted into ascending order of start time
-}
-
-
+  bool m_running; // true if the sequence is currently running
+  bool m_paused; // true if the sequence is currently paused
+  TimeStamp m_pausetime; // the time that the sequence was paused
+  TimeStamp m_timenow; // the current time (last time that tick() was called)
+};
 
 #endif
