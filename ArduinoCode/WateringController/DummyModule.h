@@ -7,6 +7,6 @@ class DummyModule : public RemoteModule {
     void tick(TimeStamp timenow) {};
     void receiveMessage(unsigned char bytecommand, unsigned long &receivedStatus) {};
 
-  static DummyModule s_dummyModule;
-}
+    static DummyModule s_dummyModule;
+};
 #endif

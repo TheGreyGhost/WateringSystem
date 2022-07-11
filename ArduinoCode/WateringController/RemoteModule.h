@@ -2,8 +2,8 @@
 #define REMOTEMODULE_H
 #include "TimeStamp.h"
 
-enum RemoteModuleErrorStatus {OK, NOT_RESPONDING, HAS_AN_ERROR, COMMAND_UNRECOGNISED};
-enum RemoteModuleCheckingStatus {NOT_WAITING, WAITING_FOR_REPLY};
+enum class RemoteModuleErrorStatus {OK, NOT_RESPONDING, HAS_AN_ERROR, COMMAND_UNRECOGNISED};
+enum class RemoteModuleCheckingStatus {NOT_WAITING, WAITING_FOR_REPLY};
 
 class RemoteModule {
   public:
@@ -19,13 +19,13 @@ class RemoteModule {
     // the base class handles msg 100 (status) and msg 255 (unrecognised command)
     bool receiveMessage(TimeStamp timenow, unsigned char bytecommand, unsigned long receivedStatus);  
     
-    RemoteModuleErrorStatus getStatus() {return m_remoteModuleErrorStatus;}
-    uint32_t getStatusCode() {return m_statuscode;}
+    RemoteModuleErrorStatus getStatus() const {return m_remoteModuleErrorStatus;}
+    uint32_t getStatusCode() const {return m_statuscode;}
 
     void checkStatusOccasionally(TimeStamp timenow);
 
-    static RemoteModule &getModule(uint8_t moduleID);
-    uint8_t getID() {return m_moduleID;}
+    static const RemoteModule &getModule(uint8_t moduleID);
+    uint8_t getID() const {return m_moduleID;}
 
   protected:
     bool sendCommandToModule(TimeStamp timenow, unsigned char bytecommand, unsigned long dwordparameter);
@@ -33,11 +33,11 @@ class RemoteModule {
     
     TimeStamp m_msgSentTime; 
     TimeStamp m_statusReceivedTime;
+    RemoteModuleErrorStatus m_remoteModuleErrorStatus = RemoteModuleErrorStatus::OK;
+    RemoteModuleCheckingStatus m_remoteCheckingStatus = RemoteModuleCheckingStatus::NOT_WAITING;
    
   private:
     uint8_t m_moduleID;
-    RemoteModuleErrorStatus m_remoteModuleErrorStatus = OK;
-    RemoteModuleCheckingStatus m_remoteCheckingStatus = NOT_WAITING;
     uint32_t m_statuscode;
     static const int MAX_MODULE_COUNT = 10;
 

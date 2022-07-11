@@ -1,4 +1,5 @@
 #include "RelayModule.h"
+#include "SlaveComms.h"
 
 const int INTERVAL_BETWEEN_VALVE_STATE_CHECKS = 90;  // seconds
 
@@ -13,14 +14,14 @@ void RelayModule::changeState(uint8_t valvenumber, bool newstate) {
 // Relay 0 is always set to on (see PICAXE code for reason; it is a workaround for startup conditions)
 // Relays 1 to 7 are for real outputs
 void RelayModule::tick(TimeStamp timenow) {
-  if (!isBusFree() return;
+  if (!isBusFree()) return;
   if (sentMsgRecently(timenow)) return;
 
   m_states_target[0] = false;
   bool mismatch = false;
   uint8_t bitcode = 0;
   for (int i = 0; i < sizeof m_states_target / sizeof m_states_target[0]; ++i) {
-    if (m_states_target[i] != m_states_remote) mismatch = true;
+    if (m_states_target[i] != m_states_remote[i]) mismatch = true;
     bitcode |= (1 << i);
   }
 
@@ -33,12 +34,12 @@ void RelayModule::tick(TimeStamp timenow) {
   }
 }
 
-void RelayModule::receiveMessage((TimeStamp timenow, unsigned char bytecommand, unsigned long receivedStatus)  {
+void RelayModule::receiveMessage(TimeStamp timenow, unsigned char bytecommand, unsigned long receivedStatus)  {
   bool handled;
   handled = RemoteModule::receiveMessage(timenow, bytecommand, receivedStatus);
   if (handled) return;
   if (bytecommand == 102) {
-    m_remoteCheckingStatus = NOT_WAITING;
+    m_remoteCheckingStatus = RemoteModuleCheckingStatus::NOT_WAITING;
     m_valveStateReceivedTime = timenow;
     for (int i = 0; i < 8; ++i) {
       m_states_remote[i] = (receivedStatus & (1 << i)) != 0;

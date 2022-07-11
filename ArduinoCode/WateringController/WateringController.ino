@@ -3,6 +3,7 @@
 #include "SlaveComms.h"
 #include "Commands.h"
 #include "SystemStatus.h"
+#include "TimeStamp.h"
 #include <SoftwareSerial.h>
 /********************************************************************/
 
@@ -22,6 +23,7 @@ void setup(void)
 
 void loop(void) 
 { 
+  TimeStamp
   tickCommands();
   tickSlaveComms();
   tickSystemStatus();

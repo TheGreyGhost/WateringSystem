@@ -3,6 +3,7 @@
 #include "Commands.h"
 #include "SystemStatus.h"
 #include "SlaveComms.h"
+#include "DummyModule.h"
 
 boolean parseAndExecuteRcommand(char command[], Print *errorconsole);
 
@@ -96,7 +97,7 @@ void executeCommand(char command[])
       }
       if (success) {
         dwordparameter = retval;
-        success = sendCommand(byteid, bytecommand, dwordparameter);
+        success = sendCommand(DummyModule::s_dummyModule, byteid, bytecommand, dwordparameter);
         if (!success) {
           console->println("transmission failed"); 
         }
