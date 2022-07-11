@@ -65,17 +65,19 @@ bool parseFloatFromString(const char *buffer, const char * &nextUnparsedChar, fl
 // execute the command encoded in commandString.  Null-terminated
 void executeCommand(char command[]) 
 {
+  Ticks ticksnow;
+  ticksnow.updateFromInternalClock();
   bool commandIsValid = false;
   switch (command[0]) {
     case '?': {
       commandIsValid = true;
-      console->println("commands (turn CR+LF on):");
-      console->println("!s {byteID} {byteCommand} {dwordParameter}.  = Send to RS485 Example !s 5A 34 FF03 ");
-      console->println("!r+ {byteID} {byteRelayNumber 0 - 7} = remote turn on relay # Example !r+ 3B 3");
-      console->println("!r- {byteID} {byteRelayNumber 0 - 7} = remote turn off relay # Example !r- 3B 3");
-      console->println("!r0 {byteID} = remote turn off all relays  Example !r0 3B");
-      console->println("!rr {byteID} = read relay status of remote relays Example !rr 3B");
-      console->println("!rs {byteID} = read status of remote controller Example !rs 3B");
+      console->println(F("commands (turn CR+LF on):"));
+      console->println(F("!s {byteID} {byteCommand} {dwordParameter}.  = Send to RS485 Example !s 5A 34 FF03 "));
+      console->println(F("!r+ {byteID} {byteRelayNumber 0 - 7} = remote turn on relay # Example !r+ 3B 3"));
+      console->println(F("!r- {byteID} {byteRelayNumber 0 - 7} = remote turn off relay # Example !r- 3B 3"));
+      console->println(F("!r0 {byteID} = remote turn off all relays  Example !r0 3B"));
+      console->println(F("!rr {byteID} = read relay status of remote relays Example !rr 3B"));
+      console->println(F("!rs {byteID} = read status of remote controller Example !rs 3B"));
       break;
     }
     case 's': {
@@ -97,12 +99,12 @@ void executeCommand(char command[])
       }
       if (success) {
         dwordparameter = retval;
-        success = sendCommand(DummyModule::s_dummyModule, byteid, bytecommand, dwordparameter);
+        success = sendCommand(DummyModule::s_dummyModule, ticksnow, byteid, bytecommand, dwordparameter);
         if (!success) {
-          console->println("transmission failed"); 
+          console->println(F("transmission failed")); 
         }
       } else {
-        console->println("invalid parameters; type !? for help"); 
+        console->println(F("invalid parameters; type !? for help")); 
       }
       break;
     }
@@ -116,9 +118,9 @@ void executeCommand(char command[])
   }
 
   if (!commandIsValid) {
-    console->print("unknown command:");
+    console->print(F("unknown command:"));
     console->println(command);
-    console->println("use ? for help");
+    console->println(F("use ? for help"));
   }
 }
 
@@ -162,7 +164,7 @@ boolean parseAndExecuteRcommand(char command[], Print *errorconsole)
     }  
   }
   if (!success) {
-    errorconsole->println("invalid parameters; type !? for help"); 
+    errorconsole->println(F("invalid parameters; type !? for help")); 
     return true;
   }
 
@@ -187,7 +189,7 @@ boolean parseAndExecuteRcommand(char command[], Print *errorconsole)
 }
 
 // look for incoming serial input (commands); collect the command and execute it when the entire command has arrived.
-void tickCommands()
+void tickCommands(Ticks ticksnow)
 {
   while (consoleInput->available()) {
     if (commandBufferIdx < -1  || commandBufferIdx > COMMAND_BUFFER_SIZE) {
@@ -199,11 +201,11 @@ void tickCommands()
       commandBufferIdx = 0;        
     } else if (nextChar == '\n') {
       if (commandBufferIdx == -1) {
-        console->println("Type !? for help");
+        console->println(F("Type !? for help"));
       } else if (commandBufferIdx > 0) {
         if (commandBufferIdx > MAX_COMMAND_LENGTH) {
           commandBuffer[MAX_COMMAND_LENGTH] = '\0';
-          console->print("Command too long:"); console->println(commandBuffer);
+          console->print(F("Command too long:")); console->println(commandBuffer);
         } else {
           commandBuffer[commandBufferIdx++] = '\0';
           executeCommand(commandBuffer);

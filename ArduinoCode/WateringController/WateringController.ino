@@ -3,7 +3,7 @@
 #include "SlaveComms.h"
 #include "Commands.h"
 #include "SystemStatus.h"
-#include "TimeStamp.h"
+#include "Ticks.h"
 #include <SoftwareSerial.h>
 /********************************************************************/
 
@@ -23,8 +23,9 @@ void setup(void)
 
 void loop(void) 
 { 
-  TimeStamp
-  tickCommands();
-  tickSlaveComms();
+  Ticks ticksnow;
+  ticksnow.updateFromInternalClock();
+  tickCommands(ticksnow);
+  tickSlaveComms(ticksnow);
   tickSystemStatus();
 }

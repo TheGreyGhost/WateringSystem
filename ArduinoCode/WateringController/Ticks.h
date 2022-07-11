@@ -58,7 +58,7 @@ public:
     m_milliseconds -= milliseconds;
     return *this;
   }
-millis
+
 private:
   uint32_t m_milliseconds;  // seconds since Jan 1 2020 00:00:00 UTC+0:00
 };
