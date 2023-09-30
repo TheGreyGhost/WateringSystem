@@ -4,203 +4,291 @@
 
 //using std::cout;
 
-ValveTime::ValveTime(Valve &valve, TimeStamp startTimeStamp, long durationSeconds) :
-                      m_valve(valve), m_startTimeStamp(startTimeStamp), m_endTimeStamp(startTimeStamp + durationSeconds),
-                      m_next(nullptr) {
+SharedMemory g_sharedMemorySequencesSchedules(1000);
+
+TimeStamp ValveSequence::s_timenow; // the current time (last time that tick() was called for any ValveSequence)
+
+ValveStateChange::ValveStateChange(const Valve& valve, uint16_t timeSeconds, bool state) : m_valveAndState(valve, state){
+  m_timeSeconds = timeSeconds;
 }
 
-// adjust the start and end time to account for a pause and unpause
-void ValveTime::resumeAfterPause(TimeStamp pauseTime, TimeStamp resumeTime) {
-  if (resumeTime < m_startTimeStamp || pauseTime > m_endTimeStamp) return;
-  if (pauseTime < m_startTimeStamp) {
-    m_startTimeStamp += resumeTime - pauseTime;
-  }
-  m_endTimeStamp += resumeTime - pauseTime;
+ValveStateChange ValveStateChange::emptyValveStateChange() {
+  return ValveStateChange(Valve::emptyValve(), 0, false);
 }
 
-//ValveTime::ValveTime(const ValveTime &src) : m_valve(src.m_valve) {
-//  m_startTimeStamp = src.m_startTimeStamp;
-//  m_endTimeStamp = src.m_endTimeStamp;
-//}
-//
-//ValveTime &ValveTime::operator=(const ValveTime &src) {
-//  if (&src == this) return *this;
-//  m_valve = src.m_valve;
-//  m_startTimeStamp = src.m_startTimeStamp;
-//  m_endTimeStamp = src.m_endTimeStamp;
-//  return *this;
-//}
-
-void ValveSequence::addValveOpenTime(Valve valve, TimeStamp startTimeStamp, int durationSeconds) {
-// add the valve into time-sorted order
+bool ValveStateChange::isValid() const {
+  return m_valveAndState.getValve().isValid();
+}
+//------------
+SuccessCode ValveSequence::addValveOpenPeriod(Valve valve, uint16_t startTimeOffsetSeconds, uint16_t durationSeconds) {
   checkInvariants();
-  ValveTime *newValveTime = new ValveTime(valve, startTimeStamp, durationSeconds);
-  ValveTime *ptr = m_ValveTimesHead;
-  ValveTime *prev = nullptr;
-  if (ptr == nullptr || *newValveTime < *ptr) {
-    m_ValveTimesHead = newValveTime;
-    newValveTime->setNext(ptr);
-    return;
+  // add the valve into time-sorted order
+  if ((int)startTimeOffsetSeconds + durationSeconds > UINT16_MAX) {
+    return SuccessCode(ErrorCode::SequenceDurationExceedsMaximum);
   }
-  prev = ptr;
-  ptr = ptr->getNext();
-  while (ptr != nullptr) {
-    if (*newValveTime < *ptr) {
-      newValveTime->setNext(ptr);      
-      prev->setNext(newValveTime);
-      return;
-    }   
-    prev = ptr;
-    ptr = ptr->getNext();    
+  if (durationSeconds > valve.getMaxOnTimeSeconds()) {
+    return SuccessCode(ErrorCode::ValveOnTimeTooLong);
   }
-  prev->setNext(newValveTime);
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  SuccessCode successCode = insertValveStateChange(startTimeOffsetSeconds, valve, true);
+  if (!successCode.succeeded()) return successCode;
+  successCode = insertValveStateChange(startTimeOffsetSeconds + durationSeconds, valve, false);
+  return successCode;
 }
 
 long ValveSequence::getElapsedTimeSeconds() {
   checkInvariants();
-  TimeStamp startTime = getStartTime();
-  TimeStamp endTime = getEndTime();
-  if (m_timenow > endTime) return endTime - startTime;
-  return m_timenow - startTime;
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (!vsd.m_running) {
+    return 0;
+  }
+  if (vsd.m_paused) {
+    return (vsd.m_pausetime - vsd.m_zerotime);
+  }
+  uint16_t sequenceDuration = getSequenceDurationSeconds();
+  if (s_timenow - vsd.m_zerotime >= sequenceDuration) {
+    return sequenceDuration;
+  }
+  return s_timenow - vsd.m_zerotime;
+}
+
+uint16_t ValveSequence::getSequenceDurationSeconds() {
+  int count = m_smaToken.getValveSequenceData().m_numberOfElements;
+  int i;
+  for (i = count-1; i >= 0 && !m_smaToken[i].isValid(); --i);
+  return (i >= 0) ? m_smaToken[i].getTimeSeconds() : 0;
+//  uint16_t latestTime = 0;
+//  for (int i = 0; i < count; ++i) {
+//    if (m_smaToken[i].isValid()) {
+//      latestTime = m_smaToken[i].getTimeSeconds();
+//    }
+//  }
+//  return latestTime;
 }
 
 long ValveSequence::getRemainingTimeSeconds() {
   checkInvariants();
-  TimeStamp startTime = getStartTime();
-  TimeStamp endTime = getEndTime();
-  if (m_timenow > endTime) return 0;
-  if (m_timenow < startTime) return endTime - startTime;
-  return endTime - m_timenow;
+  if (!m_smaToken.getValveSequenceData().m_running) {
+    return 0;
+  }
+  return getSequenceDurationSeconds() - getElapsedTimeSeconds();
 }
 
 void ValveSequence::tick(TimeStamp timenow) {
-  m_timenow = timenow;
+  s_timenow = timenow;
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (!vsd.m_running || vsd.m_paused) return;
+  long secondsSinceStart = timenow - vsd.m_zerotime;
+  int count = m_smaToken.getValveSequenceData().m_numberOfElements;
+  if (m_smaToken[count - 1].isValid() && secondsSinceStart >= m_smaToken[count-1].getTimeSeconds()) {
+    return;
+  }
+
+  //algorithm is:
+  // 1) find where we are up to in the sequence, then
+  // 2) work backwards to find the latest state for each valve.
+  //   a) where we find a valve, set a flag
+  //     so that we ignore all earlier states for that valve
+  //   b) we only change the valve state if the new state is true (this is to ensure that
+  //      if multiple sequences are running which share the same valve, then the valve is on
+  //      whenever either of the sequences has it on)
+  int timeidx;
+  for (timeidx = 0;
+       timeidx < count && m_smaToken[timeidx].getTimeSeconds() <= secondsSinceStart; ++timeidx);
+  AllValveStates allValveStates;  // re-used as:  true = have found this valve once already
+
+  for (int i = timeidx - 1; i >= 0; --i) {
+    Valve valve = m_smaToken[i].getValve();
+    if (!allValveStates.getValveState(valve)) {
+      allValveStates.setValveState(valve, true);
+      if (m_smaToken[i].getValveAndState().getState()) {
+        valve.setValveNewState(true);
+      }
+    }
+  }
 }
 
 TimeStamp ValveSequence::getStartTime() {
-  ValveTime *ptr = m_ValveTimesHead;
-  if (ptr == nullptr)
-    return m_timenow;
-  else
-    return ptr->getStartTimeStamp();;
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (!vsd.m_running) {
+    return s_timenow;
+  }
+  if (vsd.m_paused) {
+    return s_timenow - (vsd.m_pausetime - vsd.m_zerotime);
+  }
+  return vsd.m_zerotime;
 }
 
 TimeStamp ValveSequence::getEndTime() {
-  ValveTime *ptr = m_ValveTimesHead;
-  if (ptr == nullptr) return m_timenow;
-
-  TimeStamp endTime = ptr->getEndTimeStamp();
-  while (ptr->getNext() != nullptr) {
-    ptr = ptr->getNext();
-    if (endTime < ptr->getEndTimeStamp()) endTime = ptr->getEndTimeStamp();
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (!vsd.m_running) {
+    return s_timenow;
   }
-  return endTime;
+  return getStartTime() + getSequenceDurationSeconds();
 }
 
-// adds (merges) the src sequence into this one.
-void ValveSequence::addSequence(ValveSequence &src) {
-  ValveTime *ptr = src.m_ValveTimesHead;
-  if (ptr == nullptr) return;
-  addSequence(src, ptr->getStartTimeStamp());
+TimeStamp ValveSequence::getLastStartTime() {
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  return vsd.m_zerotime;
 }
 
-// adds (merges) the src sequence into this one; adjusts the timestamps so that the first timestamp in the sequence is
-//   advanced or delayed to newStartTime and all other timestamps advance or delay by the same amount.
-// No attempt to shorten the sequence by merging overlapping times for the same valve; not worth the effort.
-void ValveSequence::addSequence(ValveSequence &src, TimeStamp newStartTime) {
-  ValveTime *ptr = src.m_ValveTimesHead;
-  if (ptr == nullptr) return;
-  long offset = newStartTime - ptr->getStartTimeStamp();
-  while (ptr != nullptr) {
-    addValveOpenTime(ptr->getValve(), ptr->getStartTimeStamp() + offset, ptr->getEndTimeStamp() - ptr->getStartTimeStamp());
-    ptr = ptr->getNext();
+void ValveSequence::start() {
+  if (m_smaToken.getValveSequenceData().m_running) {
+    stop();
   }
+  m_smaToken.getValveSequenceData().m_running = true;
+  m_smaToken.getValveSequenceData().m_paused = false;
+  m_smaToken.getValveSequenceData().m_zerotime = s_timenow;
+}
+
+void ValveSequence::stop() {
+//  if (!m_smaToken.getValveSequenceData().m_running) {
+//    return;
+//  }
+  m_smaToken.getValveSequenceData().m_running = false;
+//  int count = m_smaToken.getValveSequenceData().m_numberOfElements;
+//  for (int i = 0; i < count; ++i) {
+//    Valve valve = m_smaToken[i].getValve();
+//    valve.setValveNewState(false);
+//  }
 }
 
 void ValveSequence::pause() {
-  if (m_paused) return;
-  m_paused = true;
-  m_pausetime = m_timenow;
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (vsd.m_paused) return;
+  vsd.m_paused = true;
+  vsd.m_pausetime = s_timenow;
 }
 
 void ValveSequence::resume() {
-  if (!m_paused) return;
-  ValveTime *ptr = m_ValveTimesHead;
-  while (ptr != nullptr) {
-    ptr->resumeAfterPause(m_pausetime, m_timenow);
-    ptr = ptr->getNext();
-  }
+  ValveSequenceSMAtoken::ValveSequenceData &vsd = m_smaToken.getValveSequenceData();
+  if (!vsd.m_paused) return;
+  vsd.m_paused = false;
+  vsd.m_zerotime += s_timenow - vsd.m_pausetime;
 }
 
 void ValveSequence::checkInvariants() {
-  ValveTime *ptr = m_ValveTimesHead;
-  ValveTime *prev = nullptr;
-
-  while (ptr != nullptr) {
-    if (prev != nullptr) {
-      if (*prev > *ptr) {
+  int count = m_smaToken.getValveSequenceData().m_numberOfElements;
+  uint16_t transTime = 0;
+  for (int i = 0; i < count; ++i) {
+    if (m_smaToken[i].isValid()) {
+      if (m_smaToken[i].getTimeSeconds() < transTime) {
         assertFailureCode = ASSERT_INVARIANT_FAILED;
-        return;
+      } else {
+        transTime = m_smaToken[i].getTimeSeconds();
       }
     }
-    prev = ptr;
-    ptr = ptr->getNext();    
   }
 }
 
-ValveSequence::ValveSequence(const ValveSequence &old_obj) {
-  m_ValveTimesHead = nullptr;
-  deepCopyValveTimes(old_obj.m_ValveTimesHead);
+SuccessCode ValveSequence::insertValveStateChange(uint16_t timeSeconds, const Valve& valve, bool state) {
+  int count = m_smaToken.getValveSequenceData().m_numberOfElements;
+  int reservedspace = m_smaToken.getNumberOfAllocatedElements();
+  if (count >= reservedspace) {
+    SuccessCode successCode = m_smaToken.resize(count + 1);
+    if (!successCode.succeeded()) return successCode;
+  }
+  int startIdx = 0;
+  while (startIdx < count && m_smaToken[startIdx].isValid() && m_smaToken[startIdx].getTimeSeconds() < timeSeconds) {
+    ++startIdx;
+  }
+  m_smaToken.getValveSequenceData().m_numberOfElements += 1;
+  for (int i = count; i > startIdx; --i) {
+    m_smaToken[i] = m_smaToken[i-1];
+  }
+  m_smaToken[startIdx] = ValveStateChange(valve, timeSeconds, state);
+  return SuccessCode::success();
 }
 
-ValveSequence::~ValveSequence() {
-  freeAllValveTimes();
+void ValveSequence::transferFrom(ValveSequence &src) {
+  m_smaToken.transferFrom(src.m_smaToken);
 }
 
-ValveSequence &ValveSequence::operator=(const ValveSequence &src) {
-  if (&src == this) return *this;
-  deepCopyValveTimes(src.m_ValveTimesHead);
-  return *this;
+ValveSequence::ValveSequence() : m_smaToken() {
 }
 
-void ValveSequence::freeAllValveTimes() {
-  ValveTime *ptr;
-  ValveTime *next;
+SuccessCode ValveSequence::resize(uint8_t numberOfValveActivations) {
+  SuccessCode successCode = m_smaToken.resize(numberOfValveActivations * 2);
+  if (!successCode.succeeded()) return successCode;
+  m_smaToken.getValveSequenceData().m_numberOfElements = 0;
+  stop();
+  return ErrorCode::OK;
+}
 
-  ptr = m_ValveTimesHead;   
-  while (ptr != nullptr) {
-    next = ptr->getNext();
-    delete ptr;
-    ptr = next;
+//--------------------------
+
+ValveSequenceSMAtoken::ValveSequenceSMAtoken(uint8_t numberOfValveActivations) {
+  int numberOfElements = numberOfValveActivations * 2;  // each valve has an on, then an off
+  if (numberOfElements >= 256) {
+    assertFailureCode = ASSERT_PARAMETER_OUT_OF_RANGE;
+    m_sma = SharedMemoryArray();
+    return;
+  }
+  m_sma = g_sharedMemorySequencesSchedules.allocate(
+          sizeof(ValveSequenceData), sizeof (ValveStateChange), numberOfElements);
+  if (m_sma.isValid()) {
+    ValveSequenceData &vsd = getValveSequenceData();
+    ValveStateChange *vsc = getValveStateChangesArray();
+    vsd.m_numberOfElements = 0;
+    vsd.m_maxNumberOfElements = numberOfElements;
+    vsd.m_paused = false;
+    vsd.m_running = false;
+    for (int i = 0; i < numberOfElements; ++i) {
+      vsc[i] = ValveStateChange::emptyValveStateChange();
+    }
   }
 }
 
-void ValveSequence::deepCopyValveTimes(ValveTime *srcHead) {
-  freeAllValveTimes();
-  
-  ValveTime *old_ptr;
-  ValveTime *new_ptr;
-
-  old_ptr = srcHead;   
-  if (old_ptr == nullptr) return;
-  new_ptr = new ValveTime(*old_ptr);
-  m_ValveTimesHead = new_ptr;
-  old_ptr = old_ptr->getNext();
-  while (old_ptr != nullptr) {
-    new_ptr->setNext(new ValveTime(*old_ptr));
-    old_ptr = old_ptr->getNext();
-    new_ptr = new_ptr->getNext();
+SuccessCode ValveSequenceSMAtoken::resize(uint8_t newNumberOfElements) {
+  uint8_t oldNumberOfElements = getNumberOfAllocatedElements();
+  SuccessCode result = g_sharedMemorySequencesSchedules.resize(m_sma, newNumberOfElements);
+  if (result.succeeded()) {
+    ValveSequenceData &vsd = getValveSequenceData();
+    vsd.m_maxNumberOfElements = newNumberOfElements;
+    if (newNumberOfElements > oldNumberOfElements) {
+      ValveStateChange *vsc = getValveStateChangesArray();
+      for (int i = oldNumberOfElements; i < newNumberOfElements; ++i) {
+        vsc[i] = ValveStateChange::emptyValveStateChange();
+      }
+    }
   }
+  return result;
 }
 
-#ifdef TESTHARNESS
-void ValveSequence::printChain() {
-  ValveTime *vtptr = m_ValveTimesHead;
-  TimeStamp zeroTime(2022, 1, 1, 0, 0, 0, 0.0F);
-
-  while (vtptr != nullptr) {
-    cout << "ID:" << vtptr->getValve().getID() << ", ontime:" << vtptr->getStartTimeStamp()-zeroTime << ", offtime:" << vtptr->getEndTimeStamp()-zeroTime << std::endl;
-    vtptr = vtptr->getNext();
+ValveStateChange &ValveSequenceSMAtoken::operator[](uint8_t index) {
+  ValveSequenceData &vsd = getValveSequenceData();
+  if (index >= vsd.m_numberOfElements) {
+    assertFailureCode = ASSERT_INDEX_OUT_OF_BOUNDS;
+    return *(ValveStateChange *)(m_sma.getElement(g_sharedMemorySequencesSchedules, 0));
   }
+  return *(ValveStateChange *)(m_sma.getElement(g_sharedMemorySequencesSchedules, index));
 }
-#endif
+
+ValveSequenceSMAtoken::ValveSequenceData &ValveSequenceSMAtoken::getValveSequenceData() {
+  uint8_t *baseAddress = m_sma.getInfoBlock(g_sharedMemorySequencesSchedules);
+  return *(ValveSequenceData *)baseAddress;
+}
+
+ValveStateChange *ValveSequenceSMAtoken::getValveStateChangesArray() {
+  uint8_t *baseAddress = m_sma.getElement(g_sharedMemorySequencesSchedules, 0);
+  return (ValveStateChange *)(baseAddress);
+}
+
+ValveSequenceSMAtoken::~ValveSequenceSMAtoken() {
+  g_sharedMemorySequencesSchedules.deallocate(m_sma);
+}
+
+uint8_t ValveSequenceSMAtoken::getNumberOfAllocatedElements() {
+  ValveSequenceData &vsd = getValveSequenceData();
+  return vsd.m_maxNumberOfElements;
+}
+
+void ValveSequenceSMAtoken::transferFrom(ValveSequenceSMAtoken &src) {
+  if (m_sma == src.m_sma) return;
+  g_sharedMemorySequencesSchedules.deallocate(m_sma);
+  m_sma = src.m_sma;
+  src.m_sma = SharedMemoryArray();  // invalidate src
+}
+
+ValveSequenceSMAtoken::ValveSequenceSMAtoken() : m_sma() {  // starts off invalid
+}

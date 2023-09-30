@@ -7,6 +7,10 @@ extern byte assertFailureCode;
 #define ASSERT_INDEX_OUT_OF_BOUNDS 2
 #define ASSERT_INVARIANT_FAILED 3
 #define ASSERT_PARAMETER_OUT_OF_RANGE 4
+#define ASSERT_SMA_DEALLOCATED_TWICE 5
+#define ASSERT_SMA_USED_WHILE_INVALID 6
+#define ASSERT_SMA_ELEMENT_OUT_OF_BOUNDS 7
+#define ASSERT_SMA_ALLOCATION_FAILED 8
 extern Print *console;
 extern Stream *consoleInput;
 

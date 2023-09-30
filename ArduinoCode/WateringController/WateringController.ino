@@ -5,7 +5,10 @@
 #include "SystemStatus.h"
 #include "Ticks.h"
 #include <SoftwareSerial.h>
+#include "Scheduler.h"
 /********************************************************************/
+
+Scheduler scheduler;
 
 void setup(void) 
 { 
@@ -14,6 +17,10 @@ void setup(void)
   Serial.print("Version:");
   Serial.println(WC_VERSION); 
   Serial.println("Setting up"); 
+
+  scheduler.resizeValveSequencesArray(5);
+  scheduler.resizeWeeklySchedulesArray(5);
+  scheduler.resizeDailySchedulesArray(5);
 
   setupSystemStatus();
   setupSlaveComms();
@@ -28,4 +35,6 @@ void loop(void)
   tickCommands(ticksnow);
   tickSlaveComms(ticksnow);
   tickSystemStatus();
+  TimeStamp ts;
+  scheduler.tick(ts);
 }
